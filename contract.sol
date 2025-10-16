@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 /**
  * @title Motify
  * @notice A contract for managing stake-based challenges with a unified claim function.
  * @dev Implements a withdrawal pattern and a timeout fallback to protect user funds.
  */
 contract Motify {
-    uint256 public constant MIN_AMOUNT = 0.001 ether;
+    using SafeERC20 for IERC20;
+
+    uint256 public constant MIN_AMOUNT = 1e6; // 1 USDC (6 decimals)
     uint256 public constant FEE_BASIS_POINTS = 50; // 0.5%
     uint256 public constant BASIS_POINTS_DIVISOR = 10000;
     uint256 public constant DECLARATION_TIMEOUT = 7 days;
+
+    IERC20 public immutable usdc;
 
     address public owner;
     uint256 public nextChallengeId;
@@ -66,8 +73,9 @@ contract Motify {
         uint256 amountToCharity
     );
 
-    constructor() {
+    constructor(address _usdcAddress) {
         owner = msg.sender;
+        usdc = IERC20(_usdcAddress);
     }
 
     function createChallenge(
@@ -87,18 +95,20 @@ contract Motify {
         return challengeId;
     }
 
-    function joinChallenge(uint256 _challengeId) external payable {
+    function joinChallenge(uint256 _challengeId, uint256 _amount) external {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
-        require(msg.value >= MIN_AMOUNT, "Below minimum");
+        require(_amount >= MIN_AMOUNT, "Below minimum");
 
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
 
-        p.amount = msg.value;
+        usdc.safeTransferFrom(msg.sender, address(this), _amount);
+
+        p.amount = _amount;
         p.status = Status.PENDING;
 
-        emit JoinedChallenge(_challengeId, msg.sender, msg.value);
+        emit JoinedChallenge(_challengeId, msg.sender, _amount);
     }
 
     function declareResults(
@@ -149,8 +159,7 @@ contract Motify {
         uint256 refundAmount = p.amount;
         p.amount = 0;
 
-        (bool success, ) = msg.sender.call{value: refundAmount}("");
-        require(success, "Refund transfer failed");
+        usdc.safeTransfer(msg.sender, refundAmount);
 
         string memory reason = canClaimAsWinner
             ? "Winner claim"
@@ -173,8 +182,7 @@ contract Motify {
 
         collectedFees += fee;
 
-        (bool success, ) = ch.charity.call{value: donation}("");
-        require(success, "Charity transfer failed");
+        usdc.safeTransfer(ch.charity, donation);
 
         emit DonationSent(_challengeId, _loser, donation);
     }
@@ -186,8 +194,7 @@ contract Motify {
 
         collectedFees = 0;
 
-        (bool success, ) = _to.call{value: amount}("");
-        require(success, "Withdraw failed");
+        usdc.safeTransfer(_to, amount);
     }
 
     function getParticipantInfo(
