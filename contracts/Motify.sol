@@ -13,7 +13,7 @@ contract Motify {
     using SafeERC20 for IERC20;
 
     uint256 public constant MIN_AMOUNT = 1e6; // 1 USDC (6 decimals)
-    uint256 public constant FEE_BASIS_POINTS = 50; // 0.5%
+    uint256 public constant FEE_BASIS_POINTS = 1000; // 10%
     uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
 

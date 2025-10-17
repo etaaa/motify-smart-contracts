@@ -1,28 +1,22 @@
-# Motify Contracts
+# Motify Smart Contracts
 
-Smart contracts for the Motify challenge and staking system.
+A stake-based challenge system where users commit USDC tokens and receive refunds based on their performance.
 
-## Overview
+## Contracts
 
-- `Motify.sol`: Main contract that manages challenges and stakes.
-- `MockUSDT.sol`: A mock ERC20 token (for local testing only).
+**Motify.sol**: Main contract for creating and managing challenges
+- Create public or private (whitelisted) challenges
+- Stake USDC tokens to join
+- Owner declares refund percentages (0-100%) after challenge ends
+- Unclaimed portions go to designated recipient with 10% platform fee
 
-## Development
+**MockUSDC.sol**: Test token for development (6 decimals, 1M supply)
 
-These contracts can be tested directly in [Remix](https://remix.ethereum.org) or locally using a Solidity development framework such as Hardhat or Foundry.
+## Quick Start (Remix)
 
-## Testing in Remix
-
-1. Open Remix IDE
-
-2. Upload the following files:
-    - Motify.sol
-    - MockUSDT.sol
-	
-3. Compile both contracts using Solidity ^0.8.20
-
-4. Deploy MockUSDT first
-
-5. Deploy Motify, passing the MockUSDT contract address to the constructor
-
-6. Use approve() on the mock token, then call joinChallenge() in the Motify contract
+1. Open [Remix IDE](https://remix.ethereum.org)
+2. Upload both contracts from `/contracts`
+3. Compile with Solidity ^0.8.20
+4. Deploy **MockUSDC** first
+5. Deploy **Motify** with the MockUSDC address
+6. Mint/approve tokens, then call `joinChallenge()`
