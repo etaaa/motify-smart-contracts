@@ -14,11 +14,10 @@ contract Motify {
 
     uint256 public constant MIN_AMOUNT = 1e6; // 1 USDC (6 decimals)
     uint256 public constant FEE_BASIS_POINTS = 50; // 0.5%
-    uint256 public constant BASIS_POINTS_DIVISOR = 10000;
-    uint256 public constant DECLARATION_TIMEOUT = 7 days;
+    uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
+    uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
 
     IERC20 public immutable usdc;
-
     address public owner;
     uint256 public nextChallengeId;
     uint256 public collectedFees;
@@ -34,11 +33,12 @@ contract Motify {
         address recipient;
         uint256 endTime;
         bool resultsDeclared;
-        bool isPrivate;
+        bool isPrivate; // If true, only whitelisted addresses can join
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
     }
 
+    // Store all challenges by ID
     mapping(uint256 => Challenge) public challenges;
 
     modifier onlyOwner() {
@@ -80,6 +80,9 @@ contract Motify {
         usdc = IERC20(_usdcAddress);
     }
 
+    /**
+     * @notice Create a new challenge
+     */
     function createChallenge(
         address _recipient,
         uint256 _endTime,
@@ -96,6 +99,7 @@ contract Motify {
         ch.endTime = _endTime;
         ch.isPrivate = _isPrivate;
 
+        // If private, whitelist specific addresses
         if (_isPrivate) {
             require(
                 _whitelistedParticipants.length > 0,
@@ -117,6 +121,9 @@ contract Motify {
         return challengeId;
     }
 
+    /**
+     * @notice Join an existing challenge by staking USDC
+     */
     function joinChallenge(uint256 _challengeId, uint256 _amount) external {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
@@ -132,8 +139,10 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
 
+        // Transfer USDC to contract
         usdc.safeTransferFrom(msg.sender, address(this), _amount);
 
+        // Save participant info
         p.amount = _amount;
         p.refundPercentage = 0;
         p.resultDeclared = false;
@@ -141,6 +150,9 @@ contract Motify {
         emit JoinedChallenge(_challengeId, msg.sender, _amount);
     }
 
+    /**
+     * @notice Owner declares refund percentages after challenge ends
+     */
     function declareResults(
         uint256 _challengeId,
         address[] calldata _participants,
@@ -158,6 +170,7 @@ contract Motify {
             "Array length mismatch"
         );
 
+        // Assign refund % for each participant
         for (uint i = 0; i < _participants.length; i++) {
             require(
                 _refundPercentages[i] <= BASIS_POINTS_DIVISOR,
@@ -179,6 +192,9 @@ contract Motify {
         emit ResultsDeclared(_challengeId);
     }
 
+    /**
+     * @notice Participant claims refund or donation is sent after results
+     */
     function claim(uint256 _challengeId) external {
         Challenge storage ch = challenges[_challengeId];
         Participant storage p = ch.participants[msg.sender];
@@ -196,7 +212,7 @@ contract Motify {
         uint256 totalAmount = p.amount;
         p.amount = 0;
 
-        // After timeout: 100% refund
+        // Case 1: Owner didn’t declare results in time — full refund
         if (canClaimAfterTimeout) {
             usdc.safeTransfer(msg.sender, totalAmount);
             emit RefundClaimed(
@@ -208,12 +224,12 @@ contract Motify {
             return;
         }
 
-        // Calculate refund and donation based on percentage
+        // Case 2: Refund and donation split
         uint256 refundAmount = (totalAmount * p.refundPercentage) /
             BASIS_POINTS_DIVISOR;
         uint256 donationAmount = totalAmount - refundAmount;
 
-        // Transfer refund to user
+        // Send refund to participant
         if (refundAmount > 0) {
             usdc.safeTransfer(msg.sender, refundAmount);
             emit RefundClaimed(
@@ -224,7 +240,7 @@ contract Motify {
             );
         }
 
-        // Process donation to recipient (with fee deduction)
+        // Send donation (minus fee) to recipient
         if (donationAmount > 0) {
             uint256 fee = (donationAmount * FEE_BASIS_POINTS) /
                 BASIS_POINTS_DIVISOR;
@@ -237,6 +253,9 @@ contract Motify {
         }
     }
 
+    /**
+     * @notice Owner withdraws collected platform fees
+     */
     function withdrawFees(address _to) external onlyOwner {
         require(_to != address(0), "Invalid address");
         uint256 amount = collectedFees;
@@ -247,6 +266,9 @@ contract Motify {
         usdc.safeTransfer(_to, amount);
     }
 
+    /**
+     * @notice View info about a participant in a challenge
+     */
     function getParticipantInfo(
         uint256 _challengeId,
         address _user
@@ -259,6 +281,9 @@ contract Motify {
         return (p.amount, p.refundPercentage, p.resultDeclared);
     }
 
+    /**
+     * @notice Check if a user is whitelisted for a private challenge
+     */
     function isWhitelisted(
         uint256 _challengeId,
         address _user
@@ -266,6 +291,9 @@ contract Motify {
         return challenges[_challengeId].whitelist[_user];
     }
 
+    /**
+     * @notice View main info about a challenge
+     */
     function getChallengeInfo(
         uint256 _challengeId
     )
