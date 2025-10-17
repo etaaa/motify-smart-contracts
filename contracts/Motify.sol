@@ -36,7 +36,7 @@ contract Motify {
 
     struct Challenge {
         address creator;
-        address charity;
+        address recipient;
         uint256 endTime;
         bool resultsDeclared;
         bool isPrivate;
@@ -54,7 +54,7 @@ contract Motify {
     event ChallengeCreated(
         uint256 indexed challengeId,
         address indexed creator,
-        address charity,
+        address recipient,
         uint256 endTime,
         bool isPrivate
     );
@@ -73,7 +73,7 @@ contract Motify {
     event DonationSent(
         uint256 indexed challengeId,
         address indexed user,
-        uint256 amountToCharity
+        uint256 amountToRecipient
     );
     event ParticipantsWhitelisted(
         uint256 indexed challengeId,
@@ -86,18 +86,18 @@ contract Motify {
     }
 
     function createChallenge(
-        address _charity,
+        address _recipient,
         uint256 _endTime,
         bool _isPrivate,
         address[] calldata _whitelistedParticipants
     ) external returns (uint256) {
-        require(_charity != address(0), "Invalid charity address");
+        require(_recipient != address(0), "Invalid recipient address");
         require(_endTime > block.timestamp, "End time must be in the future");
 
         uint256 challengeId = nextChallengeId++;
         Challenge storage ch = challenges[challengeId];
         ch.creator = msg.sender;
-        ch.charity = _charity;
+        ch.recipient = _recipient;
         ch.endTime = _endTime;
         ch.isPrivate = _isPrivate;
 
@@ -115,7 +115,7 @@ contract Motify {
         emit ChallengeCreated(
             challengeId,
             msg.sender,
-            _charity,
+            _recipient,
             ch.endTime,
             _isPrivate
         );
@@ -216,7 +216,7 @@ contract Motify {
 
         collectedFees += fee;
 
-        usdc.safeTransfer(ch.charity, donation);
+        usdc.safeTransfer(ch.recipient, donation);
 
         emit DonationSent(_challengeId, _loser, donation);
     }
@@ -253,7 +253,7 @@ contract Motify {
         view
         returns (
             address creator,
-            address charity,
+            address recipient,
             uint256 endTime,
             bool resultsDeclared,
             bool isPrivate
@@ -262,7 +262,7 @@ contract Motify {
         Challenge storage ch = challenges[_challengeId];
         return (
             ch.creator,
-            ch.charity,
+            ch.recipient,
             ch.endTime,
             ch.resultsDeclared,
             ch.isPrivate
