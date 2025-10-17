@@ -7,7 +7,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /**
  * @title Motify
  * @notice A contract for managing stake-based challenges with percentage-based refunds.
- * @dev Implements a withdrawal pattern and a timeout fallback to protect user funds.
+ * @dev Implements a withdrawal pattern for refunds. Donations and fees are processed in bulk by the owner.
+ * @dev This design choice means small refund amounts may remain unclaimed in the contract if users
+ * decide not to spend gas to retrieve them.
  */
 contract Motify {
     using SafeERC20 for IERC20;
@@ -23,6 +25,9 @@ contract Motify {
     uint256 public collectedFees;
 
     struct Participant {
+        // NOTE: The meaning of 'amount' changes.
+        // Before results are declared, it's the initial stake.
+        // After results are declared, it's the claimable refund amount.
         uint256 amount;
         uint256 refundPercentage; // 0-10000 (0% to 100% in basis points)
         bool resultDeclared;
@@ -53,28 +58,21 @@ contract Motify {
         bool isPrivate,
         bytes32 metadataHash
     );
-
     event JoinedChallenge(
         uint256 indexed challengeId,
         address indexed user,
         uint256 amount
     );
-
-    event ResultsDeclared(uint256 indexed challengeId);
-
+    event ResultsDeclared(
+        uint256 indexed challengeId,
+        uint256 totalDonationAmount,
+        uint256 feesCollected
+    );
     event RefundClaimed(
         uint256 indexed challengeId,
         address indexed user,
-        uint256 refundAmount,
-        uint256 refundPercentage
+        uint256 refundAmount
     );
-
-    event DonationSent(
-        uint256 indexed challengeId,
-        address indexed user,
-        uint256 amountToRecipient
-    );
-
     event ParticipantsWhitelisted(
         uint256 indexed challengeId,
         address[] participants
@@ -105,7 +103,6 @@ contract Motify {
         ch.endTime = _endTime;
         ch.isPrivate = _isPrivate;
 
-        // If private, whitelist specific addresses
         if (_isPrivate) {
             require(
                 _whitelistedParticipants.length > 0,
@@ -146,10 +143,8 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
 
-        // Transfer USDC to contract
         usdc.safeTransferFrom(msg.sender, address(this), _amount);
 
-        // Save participant info
         p.amount = _amount;
         p.refundPercentage = 0;
         p.resultDeclared = false;
@@ -158,7 +153,8 @@ contract Motify {
     }
 
     /**
-     * @notice Owner declares refund percentages after challenge ends
+     * @notice Owner declares refund percentages and processes all donations/fees for a challenge at once.
+     * @dev After this function runs, participants must call `claimRefund` to get their portion back.
      */
     function declareResults(
         uint256 _challengeId,
@@ -176,7 +172,8 @@ contract Motify {
             "Array length mismatch"
         );
 
-        // Assign refund % for each participant
+        uint256 totalDonationForChallenge = 0;
+
         for (uint i = 0; i < _participants.length; i++) {
             require(
                 _refundPercentages[i] <= BASIS_POINTS_DIVISOR,
@@ -190,72 +187,74 @@ contract Motify {
                 "Result already declared for participant"
             );
 
+            uint256 initialStake = p.amount;
+            uint256 refundAmount = (initialStake * _refundPercentages[i]) /
+                BASIS_POINTS_DIVISOR;
+            uint256 donationAmount = initialStake - refundAmount;
+
+            totalDonationForChallenge += donationAmount;
+
+            // Overwrite the participant's amount with their claimable refund.
+            p.amount = refundAmount;
             p.refundPercentage = _refundPercentages[i];
             p.resultDeclared = true;
         }
 
-        emit ResultsDeclared(_challengeId);
-    }
-
-    /**
-     * @notice Participant claims refund or donation is sent after results
-     */
-    function claim(uint256 _challengeId) external {
-        Challenge storage ch = challenges[_challengeId];
-        Participant storage p = ch.participants[msg.sender];
-        require(p.amount > 0, "No funds to claim or already claimed");
-
-        bool canClaimWithResult = p.resultDeclared;
-        bool canClaimAfterTimeout = !p.resultDeclared &&
-            block.timestamp > ch.endTime + DECLARATION_TIMEOUT;
-
-        require(
-            canClaimWithResult || canClaimAfterTimeout,
-            "Claim conditions not met"
-        );
-
-        uint256 totalAmount = p.amount;
-        p.amount = 0;
-
-        // Case 1: Owner didn’t declare results in time — full refund
-        if (canClaimAfterTimeout) {
-            usdc.safeTransfer(msg.sender, totalAmount);
-            emit RefundClaimed(
-                _challengeId,
-                msg.sender,
-                totalAmount,
-                BASIS_POINTS_DIVISOR
-            );
-            return;
-        }
-
-        // Case 2: Refund and donation split
-        uint256 refundAmount = (totalAmount * p.refundPercentage) /
-            BASIS_POINTS_DIVISOR;
-        uint256 donationAmount = totalAmount - refundAmount;
-
-        // Send refund to participant
-        if (refundAmount > 0) {
-            usdc.safeTransfer(msg.sender, refundAmount);
-            emit RefundClaimed(
-                _challengeId,
-                msg.sender,
-                refundAmount,
-                p.refundPercentage
-            );
-        }
-
-        // Send donation (minus fee) to recipient
-        if (donationAmount > 0) {
-            uint256 fee = (donationAmount * FEE_BASIS_POINTS) /
+        // Process all donations and fees for this challenge in one transaction
+        if (totalDonationForChallenge > 0) {
+            uint256 fee = (totalDonationForChallenge * FEE_BASIS_POINTS) /
                 BASIS_POINTS_DIVISOR;
-            uint256 netDonation = donationAmount - fee;
+            uint256 netDonation = totalDonationForChallenge - fee;
 
             collectedFees += fee;
             usdc.safeTransfer(ch.recipient, netDonation);
 
-            emit DonationSent(_challengeId, msg.sender, netDonation);
+            emit ResultsDeclared(_challengeId, netDonation, fee);
         }
+    }
+
+    /**
+     * @notice A participant claims their eligible refund after results have been declared.
+     */
+    function claimRefund(uint256 _challengeId) external {
+        Challenge storage ch = challenges[_challengeId];
+        Participant storage p = ch.participants[msg.sender];
+
+        require(p.resultDeclared, "Results not yet declared");
+
+        uint256 refundAmount = p.amount;
+        require(refundAmount > 0, "No refund to claim or already claimed");
+
+        // Checks-Effects-Interactions: Set amount to zero before transfer
+        p.amount = 0;
+
+        usdc.safeTransfer(msg.sender, refundAmount);
+
+        emit RefundClaimed(_challengeId, msg.sender, refundAmount);
+    }
+
+    /**
+     * @notice A participant claims a full refund if the owner failed to declare results in time.
+     */
+    function claimTimeoutRefund(uint256 _challengeId) external {
+        Challenge storage ch = challenges[_challengeId];
+        Participant storage p = ch.participants[msg.sender];
+
+        require(!p.resultDeclared, "Results were already declared");
+        require(
+            block.timestamp > ch.endTime + DECLARATION_TIMEOUT,
+            "Declaration period has not expired"
+        );
+
+        uint256 fullRefundAmount = p.amount;
+        require(fullRefundAmount > 0, "No funds to claim or already claimed");
+
+        // Checks-Effects-Interactions: Set amount to zero before transfer
+        p.amount = 0;
+
+        usdc.safeTransfer(msg.sender, fullRefundAmount);
+
+        emit RefundClaimed(_challengeId, msg.sender, fullRefundAmount);
     }
 
     /**
