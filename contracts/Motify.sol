@@ -8,8 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @title Motify
  * @notice A contract for managing stake-based challenges with percentage-based refunds.
  * @dev Implements a withdrawal pattern for refunds. Donations and fees are processed in bulk by the owner.
- * @dev This design choice means small refund amounts may remain unclaimed in the contract if users
- * decide not to spend gas to retrieve them.
+ * @dev Results are declared in batches to support challenges with a large number of participants and avoid block gas limit issues.
  */
 contract Motify {
     using SafeERC20 for IERC20;
@@ -29,7 +28,7 @@ contract Motify {
         // Before results are declared, it's the initial stake.
         // After results are declared, it's the claimable refund amount.
         uint256 amount;
-        uint256 refundPercentage; // 0-10000 (0% to 100% in basis points)
+        uint256 refundPercentage; // 0-10000 (0% to 100% in basis points) for transparency
         bool resultDeclared;
     }
 
@@ -40,6 +39,8 @@ contract Motify {
         bool isPrivate; // If true, only whitelisted addresses can join
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
+        uint256 totalDonationAmount; // Tracks the running total of donations.
+        bool resultsFinalized; // Locks the challenge after processing donations.
     }
 
     // Store all challenges by ID
@@ -154,8 +155,8 @@ contract Motify {
     }
 
     /**
-     * @notice Owner declares refund percentages and processes all donations/fees for a challenge at once.
-     * @dev After this function runs, participants must call `claimRefund` to get their portion back.
+     * @notice Owner declares refund percentages for a subset (batch) of participants.
+     * @dev Can be called multiple times until all participants are processed. Does NOT transfer funds.
      */
     function declareResults(
         uint256 _challengeId,
@@ -165,15 +166,13 @@ contract Motify {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp >= ch.endTime, "Challenge not ended yet");
         require(
-            block.timestamp <= ch.endTime + DECLARATION_TIMEOUT,
-            "Declaration period has expired"
+            !ch.resultsFinalized,
+            "Challenge results are already finalized"
         );
         require(
             _participants.length == _refundPercentages.length,
             "Array length mismatch"
         );
-
-        uint256 totalDonationForChallenge = 0;
 
         for (uint i = 0; i < _participants.length; i++) {
             require(
@@ -193,19 +192,32 @@ contract Motify {
                 BASIS_POINTS_DIVISOR;
             uint256 donationAmount = initialStake - refundAmount;
 
-            totalDonationForChallenge += donationAmount;
+            ch.totalDonationAmount += donationAmount;
 
-            // Overwrite the participant's amount with their claimable refund.
             p.amount = refundAmount;
             p.refundPercentage = _refundPercentages[i];
             p.resultDeclared = true;
         }
+    }
 
-        // Process all donations and fees for this challenge in one transaction
-        if (totalDonationForChallenge > 0) {
-            uint256 fee = (totalDonationForChallenge * FEE_BASIS_POINTS) /
+    /**
+     * @notice After declaring all results in batches, this function processes the total donation.
+     * @dev Can only be called once per challenge. This is the function that transfers funds.
+     */
+    function finalizeAndProcessDonations(
+        uint256 _challengeId
+    ) external onlyOwner {
+        Challenge storage ch = challenges[_challengeId];
+        require(block.timestamp >= ch.endTime, "Challenge not ended yet");
+        require(!ch.resultsFinalized, "Donations have already been processed");
+
+        ch.resultsFinalized = true; // Set lock first to prevent reentrancy
+
+        uint256 totalDonation = ch.totalDonationAmount;
+        if (totalDonation > 0) {
+            uint256 fee = (totalDonation * FEE_BASIS_POINTS) /
                 BASIS_POINTS_DIVISOR;
-            uint256 netDonation = totalDonationForChallenge - fee;
+            uint256 netDonation = totalDonation - fee;
 
             collectedFees += fee;
             usdc.safeTransfer(ch.recipient, netDonation);
