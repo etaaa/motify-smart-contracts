@@ -39,7 +39,9 @@ contract Motify {
         address charity;
         uint256 endTime;
         bool resultsDeclared;
+        bool isPrivate;
         mapping(address => Participant) participants;
+        mapping(address => bool) whitelist;
     }
 
     mapping(uint256 => Challenge) public challenges;
@@ -53,7 +55,8 @@ contract Motify {
         uint256 indexed challengeId,
         address indexed creator,
         address charity,
-        uint256 endTime
+        uint256 endTime,
+        bool isPrivate
     );
     event JoinedChallenge(
         uint256 indexed challengeId,
@@ -72,6 +75,10 @@ contract Motify {
         address indexed user,
         uint256 amountToCharity
     );
+    event ParticipantsWhitelisted(
+        uint256 indexed challengeId,
+        address[] participants
+    );
 
     constructor(address _usdcAddress) {
         owner = msg.sender;
@@ -80,7 +87,9 @@ contract Motify {
 
     function createChallenge(
         address _charity,
-        uint256 _endTime
+        uint256 _endTime,
+        bool _isPrivate,
+        address[] calldata _whitelistedParticipants
     ) external returns (uint256) {
         require(_charity != address(0), "Invalid charity address");
         require(_endTime > block.timestamp, "End time must be in the future");
@@ -90,8 +99,26 @@ contract Motify {
         ch.creator = msg.sender;
         ch.charity = _charity;
         ch.endTime = _endTime;
+        ch.isPrivate = _isPrivate;
 
-        emit ChallengeCreated(challengeId, msg.sender, _charity, ch.endTime);
+        if (_isPrivate) {
+            require(
+                _whitelistedParticipants.length > 0,
+                "Private challenge needs participants"
+            );
+            for (uint i = 0; i < _whitelistedParticipants.length; i++) {
+                ch.whitelist[_whitelistedParticipants[i]] = true;
+            }
+            emit ParticipantsWhitelisted(challengeId, _whitelistedParticipants);
+        }
+
+        emit ChallengeCreated(
+            challengeId,
+            msg.sender,
+            _charity,
+            ch.endTime,
+            _isPrivate
+        );
         return challengeId;
     }
 
@@ -99,6 +126,13 @@ contract Motify {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
         require(_amount >= MIN_AMOUNT, "Below minimum");
+
+        if (ch.isPrivate) {
+            require(
+                ch.whitelist[msg.sender],
+                "Not whitelisted for this challenge"
+            );
+        }
 
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
@@ -203,5 +237,35 @@ contract Motify {
     ) external view returns (uint256 amount, Status status) {
         Participant storage p = challenges[_challengeId].participants[_user];
         return (p.amount, p.status);
+    }
+
+    function isWhitelisted(
+        uint256 _challengeId,
+        address _user
+    ) external view returns (bool) {
+        return challenges[_challengeId].whitelist[_user];
+    }
+
+    function getChallengeInfo(
+        uint256 _challengeId
+    )
+        external
+        view
+        returns (
+            address creator,
+            address charity,
+            uint256 endTime,
+            bool resultsDeclared,
+            bool isPrivate
+        )
+    {
+        Challenge storage ch = challenges[_challengeId];
+        return (
+            ch.creator,
+            ch.charity,
+            ch.endTime,
+            ch.resultsDeclared,
+            ch.isPrivate
+        );
     }
 }
