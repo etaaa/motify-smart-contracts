@@ -51,25 +51,31 @@ contract Motify {
         address indexed creator,
         address recipient,
         uint256 endTime,
-        bool isPrivate
+        bool isPrivate,
+        bytes32 metadataHash
     );
+
     event JoinedChallenge(
         uint256 indexed challengeId,
         address indexed user,
         uint256 amount
     );
+
     event ResultsDeclared(uint256 indexed challengeId);
+
     event RefundClaimed(
         uint256 indexed challengeId,
         address indexed user,
         uint256 refundAmount,
         uint256 refundPercentage
     );
+
     event DonationSent(
         uint256 indexed challengeId,
         address indexed user,
         uint256 amountToRecipient
     );
+
     event ParticipantsWhitelisted(
         uint256 indexed challengeId,
         address[] participants
@@ -87,7 +93,8 @@ contract Motify {
         address _recipient,
         uint256 _endTime,
         bool _isPrivate,
-        address[] calldata _whitelistedParticipants
+        address[] calldata _whitelistedParticipants,
+        bytes32 _metadataHash
     ) external returns (uint256) {
         require(_recipient != address(0), "Invalid recipient address");
         require(_endTime > block.timestamp, "End time must be in the future");
@@ -116,7 +123,8 @@ contract Motify {
             msg.sender,
             _recipient,
             ch.endTime,
-            _isPrivate
+            _isPrivate,
+            _metadataHash
         );
         return challengeId;
     }
@@ -264,56 +272,5 @@ contract Motify {
         collectedFees = 0;
 
         usdc.safeTransfer(_to, amount);
-    }
-
-    /**
-     * @notice View info about a participant in a challenge
-     */
-    function getParticipantInfo(
-        uint256 _challengeId,
-        address _user
-    )
-        external
-        view
-        returns (uint256 amount, uint256 refundPercentage, bool resultDeclared)
-    {
-        Participant storage p = challenges[_challengeId].participants[_user];
-        return (p.amount, p.refundPercentage, p.resultDeclared);
-    }
-
-    /**
-     * @notice Check if a user is whitelisted for a private challenge
-     */
-    function isWhitelisted(
-        uint256 _challengeId,
-        address _user
-    ) external view returns (bool) {
-        return challenges[_challengeId].whitelist[_user];
-    }
-
-    /**
-     * @notice View main info about a challenge
-     */
-    function getChallengeInfo(
-        uint256 _challengeId
-    )
-        external
-        view
-        returns (
-            address creator,
-            address recipient,
-            uint256 endTime,
-            bool resultsDeclared,
-            bool isPrivate
-        )
-    {
-        Challenge storage ch = challenges[_challengeId];
-        return (
-            ch.creator,
-            ch.recipient,
-            ch.endTime,
-            ch.resultsDeclared,
-            ch.isPrivate
-        );
     }
 }
