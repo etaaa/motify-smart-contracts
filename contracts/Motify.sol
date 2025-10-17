@@ -32,7 +32,6 @@ contract Motify {
         address creator;
         address recipient;
         uint256 endTime;
-        bool resultsDeclared;
         bool isPrivate; // If true, only whitelisted addresses can join
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
@@ -168,7 +167,6 @@ contract Motify {
     ) external onlyOwner {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp >= ch.endTime, "Challenge not ended yet");
-        require(!ch.resultsDeclared, "Results already declared");
         require(
             block.timestamp <= ch.endTime + DECLARATION_TIMEOUT,
             "Declaration period has expired"
@@ -196,7 +194,6 @@ contract Motify {
             p.resultDeclared = true;
         }
 
-        ch.resultsDeclared = true;
         emit ResultsDeclared(_challengeId);
     }
 
@@ -208,8 +205,8 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
         require(p.amount > 0, "No funds to claim or already claimed");
 
-        bool canClaimWithResult = ch.resultsDeclared && p.resultDeclared;
-        bool canClaimAfterTimeout = !ch.resultsDeclared &&
+        bool canClaimWithResult = p.resultDeclared;
+        bool canClaimAfterTimeout = !p.resultDeclared &&
             block.timestamp > ch.endTime + DECLARATION_TIMEOUT;
 
         require(
