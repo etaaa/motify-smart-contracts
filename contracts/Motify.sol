@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
 /**
  * @title Motify
@@ -128,9 +129,41 @@ contract Motify {
     }
 
     /**
-     * @notice Join an existing challenge by staking USDC
+     * @notice Join an existing challenge by staking USDC (requires prior approval)
      */
     function joinChallenge(uint256 _challengeId, uint256 _amount) external {
+        _joinChallenge(_challengeId, _amount);
+    }
+
+    /**
+     * @notice Join an existing challenge using EIP-2612 permit (single transaction, no prior approval needed)
+     */
+    function joinChallengeWithPermit(
+        uint256 _challengeId,
+        uint256 _amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // Execute the permit to approve this contract
+        IERC20Permit(address(usdc)).permit(
+            msg.sender,
+            address(this),
+            _amount,
+            deadline,
+            v,
+            r,
+            s
+        );
+
+        _joinChallenge(_challengeId, _amount);
+    }
+
+    /**
+     * @dev Internal function to handle the core join logic
+     */
+    function _joinChallenge(uint256 _challengeId, uint256 _amount) internal {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
         require(_amount >= MIN_AMOUNT, "Below minimum");
