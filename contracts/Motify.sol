@@ -79,6 +79,7 @@ contract Motify {
     );
 
     constructor(address _usdcAddress) {
+        require(_usdcAddress != address(0), "USDC address cannot be zero");
         owner = msg.sender;
         usdc = IERC20(_usdcAddress);
     }
