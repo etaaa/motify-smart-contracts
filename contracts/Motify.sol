@@ -166,36 +166,34 @@ contract Motify {
     function joinChallengeWithPermit(
         uint256 _challengeId,
         uint256 _stakeAmount,
-        uint256 _paidAmount,
         uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) external {
-        // Execute permit to get approval
+        // Execute permit to get approval (using stake amount as upper bound)
         IERC20Permit(address(usdc)).permit(
             msg.sender,
             address(this),
-            _paidAmount,
+            _stakeAmount,
             deadline,
             v,
             r,
             s
         );
 
-        _joinChallengeLogic(_challengeId, _stakeAmount, _paidAmount);
+        _joinChallengeLogic(_challengeId, _stakeAmount);
     }
 
     /**
      * @notice Join a challenge using the standard approve/transferFrom pattern
-     * @dev User must have already called usdc.approve(address(this), _paidAmount)
+     * @dev User must have already called usdc.approve(address(this), stakeAmount)
      */
     function joinChallengeWithApprove(
         uint256 _challengeId,
-        uint256 _stakeAmount,
-        uint256 _paidAmount
+        uint256 _stakeAmount
     ) external {
-        _joinChallengeLogic(_challengeId, _stakeAmount, _paidAmount);
+        _joinChallengeLogic(_challengeId, _stakeAmount);
     }
 
     /**
@@ -203,11 +201,11 @@ contract Motify {
      * @dev Handles all checks, discount logic, token transfer, and state updates.
      * @dev Assumes approval (either via permit or approve) has been handled
      * by the calling function.
+     * @dev Calculates the maximum available discount and applies it automatically.
      */
     function _joinChallengeLogic(
         uint256 _challengeId,
-        uint256 _stakeAmount,
-        uint256 _paidAmount
+        uint256 _stakeAmount
     ) internal {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.startTime, "Cannot join after start time");
@@ -224,26 +222,32 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
 
-        uint256 discount = _stakeAmount - _paidAmount;
+        // Calculate maximum available discount based on user's token balance
         uint256 userTokens = motifyToken.balanceOf(msg.sender);
         uint256 totalSupply_ = motifyToken.totalSupply();
         uint256 maxDiscount = 0;
         if (userTokens > 0 && totalSupply_ > 0 && backingPool > 0) {
             maxDiscount = (userTokens * backingPool) / totalSupply_;
+            // Cap discount at stake amount
+            if (maxDiscount > _stakeAmount) {
+                maxDiscount = _stakeAmount;
+            }
         }
-        require(discount <= maxDiscount, "Discount exceeds available");
-        require(discount <= _stakeAmount, "Invalid discount");
 
-        usdc.safeTransferFrom(msg.sender, address(this), _paidAmount);
+        // Calculate actual payment amount after discount
+        uint256 paidAmount = _stakeAmount - maxDiscount;
+
+        // Transfer the discounted amount from user
+        usdc.safeTransferFrom(msg.sender, address(this), paidAmount);
 
         // Process discount (burn tokens)
-        if (discount > 0) {
-            uint256 tokensToBurn = (discount * totalSupply_) / backingPool;
+        if (maxDiscount > 0) {
+            uint256 tokensToBurn = (maxDiscount * totalSupply_) / backingPool;
             if (tokensToBurn > userTokens) {
                 tokensToBurn = userTokens;
             }
             motifyToken.burn(msg.sender, tokensToBurn);
-            backingPool -= discount;
+            backingPool -= maxDiscount;
         }
 
         p.amount = _stakeAmount;
