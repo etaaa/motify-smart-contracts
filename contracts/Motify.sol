@@ -142,9 +142,8 @@ contract Motify {
 
     /**
      * @notice Join an existing challenge using EIP-2612 permit
-     * @dev User must compute paidAmount off-chain and sign permit for it.
      */
-    function joinChallenge(
+    function joinChallengeWithPermit(
         uint256 _challengeId,
         uint256 _stakeAmount,
         uint256 _paidAmount,
@@ -153,6 +152,43 @@ contract Motify {
         bytes32 r,
         bytes32 s
     ) external {
+        // Execute permit to get approval
+        IERC20Permit(address(usdc)).permit(
+            msg.sender,
+            address(this),
+            _paidAmount,
+            deadline,
+            v,
+            r,
+            s
+        );
+
+        _joinChallengeLogic(_challengeId, _stakeAmount, _paidAmount);
+    }
+
+    /**
+     * @notice Join a challenge using the standard approve/transferFrom pattern
+     * @dev User must have already called usdc.approve(address(this), _paidAmount)
+     */
+    function joinChallengeWithApprove(
+        uint256 _challengeId,
+        uint256 _stakeAmount,
+        uint256 _paidAmount
+    ) external {
+        _joinChallengeLogic(_challengeId, _stakeAmount, _paidAmount);
+    }
+
+    /**
+     * @notice Internal logic for joining a challenge.
+     * @dev Handles all checks, discount logic, token transfer, and state updates.
+     * @dev Assumes approval (either via permit or approve) has been handled
+     * by the calling function.
+     */
+    function _joinChallengeLogic(
+        uint256 _challengeId,
+        uint256 _stakeAmount,
+        uint256 _paidAmount
+    ) internal {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
         require(_stakeAmount >= MIN_AMOUNT, "Below minimum");
@@ -177,19 +213,9 @@ contract Motify {
         require(discount <= maxDiscount, "Discount exceeds available");
         require(discount <= _stakeAmount, "Invalid discount");
 
-        // Execute permit
-        IERC20Permit(address(usdc)).permit(
-            msg.sender,
-            address(this),
-            _paidAmount,
-            deadline,
-            v,
-            r,
-            s
-        );
-
         usdc.safeTransferFrom(msg.sender, address(this), _paidAmount);
 
+        // Process discount (burn tokens)
         if (discount > 0) {
             uint256 tokensToBurn = (discount * totalSupply_) / backingPool;
             if (tokensToBurn > userTokens) {
@@ -202,7 +228,6 @@ contract Motify {
         p.amount = _stakeAmount;
         p.refundPercentage = 0;
         p.resultDeclared = false;
-
         emit JoinedChallenge(_challengeId, msg.sender, _stakeAmount);
     }
 
