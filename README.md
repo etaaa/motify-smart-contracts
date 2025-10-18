@@ -10,7 +10,7 @@ Motify is a stake-based challenge system on Base (an Ethereum L2). Users commit 
 
 - Stake-Based Challenges: Users stake USDC to participate in public or private challenges
 - Performance-Based Refunds: Receive 0-100% refunds based on challenge performance
-- Token Rewards: Winners earn Motify tokens (10,000 MTF per USDC refunded)
+- Token Rewards: Winners earn Motify tokens (10,000 MOTFIY per USDC refunded)
 - Token-Backed Discounts: Burn Motify tokens to reduce stake amounts when joining challenges
 - EIP-2612 Permit Support: Join challenges without needing a separate approval transaction
 - Fee Structure: 10% fee on donations (5% platform, 5% token backing pool)

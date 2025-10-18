@@ -16,7 +16,7 @@ contract MotifyToken is ERC20, IMotifyToken {
         _;
     }
 
-    constructor(address _motify) ERC20("Motify Token", "MTF") {
+    constructor(address _motify) ERC20("Motify Token", "MOTIFY") {
         require(_motify != address(0), "Motify address cannot be zero");
         motify = _motify;
     }
