@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "./IMotifyToken.sol";
+
+/**
+ * @title MotifyToken
+ * @notice Simple ERC20 token with mint and burn controlled by the Motify contract.
+ */
+contract MotifyToken is ERC20, IMotifyToken {
+    address public immutable motify;
+
+    modifier onlyMotify() {
+        require(msg.sender == motify, "Not authorized");
+        _;
+    }
+
+    constructor(address _motify) ERC20("Motify Token", "MTF") {
+        require(_motify != address(0), "Motify address cannot be zero");
+        motify = _motify;
+    }
+
+    function mint(address to, uint256 amount) external override onlyMotify {
+        _mint(to, amount);
+    }
+
+    function burn(address from, uint256 amount) external override onlyMotify {
+        _burn(from, amount);
+    }
+}
