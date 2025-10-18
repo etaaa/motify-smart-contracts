@@ -22,6 +22,7 @@ contract Motify {
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
     uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
     uint256 public constant MULTIPLIER = 10000 * 1_000_000; // 10000 * 10^6 for USDC decimals
+    uint256 public constant MAX_DESCRIPTION_LENGTH = 160; // Maximum characters for challenge description
 
     IERC20 public immutable usdc;
     IMotifyToken public motifyToken;
@@ -45,6 +46,7 @@ contract Motify {
         string apiType;
         string goalType;
         uint256 goalAmount;
+        string description;
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
         uint256 totalDonationAmount;
@@ -67,6 +69,7 @@ contract Motify {
         string apiType,
         string goalType,
         uint256 goalAmount,
+        string description,
         bytes32 metadataHash
     );
     event JoinedChallenge(
@@ -115,6 +118,7 @@ contract Motify {
         string calldata _apiType,
         string calldata _goalType,
         uint256 _goalAmount,
+        string calldata _description,
         address[] calldata _whitelistedParticipants,
         bytes32 _metadataHash
     ) external returns (uint256) {
@@ -124,6 +128,10 @@ contract Motify {
             "Start time must be in the future"
         );
         require(_endTime > _startTime, "End time must be after start time");
+        require(
+            bytes(_description).length <= MAX_DESCRIPTION_LENGTH,
+            "Description too long"
+        );
 
         uint256 challengeId = nextChallengeId++;
         Challenge storage ch = challenges[challengeId];
@@ -134,6 +142,7 @@ contract Motify {
         ch.apiType = _apiType;
         ch.goalType = _goalType;
         ch.goalAmount = _goalAmount;
+        ch.description = _description;
 
         if (_isPrivate) {
             require(
@@ -155,6 +164,7 @@ contract Motify {
             _apiType,
             _goalType,
             _goalAmount,
+            _description,
             _metadataHash
         );
         return challengeId;
