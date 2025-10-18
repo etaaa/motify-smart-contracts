@@ -48,6 +48,7 @@ contract Motify {
         uint256 goalAmount;
         string description;
         mapping(address => Participant) participants;
+        address[] participantAddresses; // Track all participant addresses
         mapping(address => bool) whitelist;
         uint256 totalDonationAmount;
         bool resultsFinalized; // Locks the challenge after processing donations.
@@ -263,6 +264,10 @@ contract Motify {
         p.amount = _stakeAmount;
         p.refundPercentage = 0;
         p.resultDeclared = false;
+
+        // Track participant address
+        ch.participantAddresses.push(msg.sender);
+
         emit JoinedChallenge(_challengeId, msg.sender, _stakeAmount);
     }
 
@@ -402,5 +407,202 @@ contract Motify {
         collectedFees = 0;
 
         usdc.safeTransfer(_to, amount);
+    }
+
+    struct ParticipantInfo {
+        address participantAddress;
+        uint256 amount;
+        uint256 refundPercentage;
+        bool resultDeclared;
+    }
+
+    struct ChallengeInfo {
+        uint256 challengeId;
+        address recipient;
+        uint256 startTime;
+        uint256 endTime;
+        bool isPrivate;
+        string apiType;
+        string goalType;
+        uint256 goalAmount;
+        string description;
+        uint256 totalDonationAmount;
+        bool resultsFinalized;
+        uint256 participantCount;
+    }
+
+    struct ChallengeDetail {
+        uint256 challengeId;
+        address recipient;
+        uint256 startTime;
+        uint256 endTime;
+        bool isPrivate;
+        string apiType;
+        string goalType;
+        uint256 goalAmount;
+        string description;
+        uint256 totalDonationAmount;
+        bool resultsFinalized;
+        ParticipantInfo[] participants;
+    }
+
+    /**
+     * @notice Get detailed information about a specific challenge including all participants
+     * @param _challengeId The ID of the challenge
+     * @return ChallengeDetail struct with full challenge and participant data
+     */
+    function getChallengeById(
+        uint256 _challengeId
+    ) external view returns (ChallengeDetail memory) {
+        require(_challengeId < nextChallengeId, "Challenge does not exist");
+
+        Challenge storage ch = challenges[_challengeId];
+
+        // Build participants array
+        uint256 participantCount = ch.participantAddresses.length;
+        ParticipantInfo[] memory participantInfos = new ParticipantInfo[](
+            participantCount
+        );
+
+        for (uint256 i = 0; i < participantCount; i++) {
+            address participantAddr = ch.participantAddresses[i];
+            Participant storage p = ch.participants[participantAddr];
+            participantInfos[i] = ParticipantInfo({
+                participantAddress: participantAddr,
+                amount: p.amount,
+                refundPercentage: p.refundPercentage,
+                resultDeclared: p.resultDeclared
+            });
+        }
+
+        return
+            ChallengeDetail({
+                challengeId: _challengeId,
+                recipient: ch.recipient,
+                startTime: ch.startTime,
+                endTime: ch.endTime,
+                isPrivate: ch.isPrivate,
+                apiType: ch.apiType,
+                goalType: ch.goalType,
+                goalAmount: ch.goalAmount,
+                description: ch.description,
+                totalDonationAmount: ch.totalDonationAmount,
+                resultsFinalized: ch.resultsFinalized,
+                participants: participantInfos
+            });
+    }
+
+    /**
+     * @notice Get the latest challenges (up to 100)
+     * @param _limit Maximum number of challenges to return (capped at 100)
+     * @return Array of ChallengeInfo structs
+     */
+    function getAllChallenges(
+        uint256 _limit
+    ) external view returns (ChallengeInfo[] memory) {
+        uint256 limit = _limit > 100 ? 100 : _limit;
+        uint256 totalChallenges = nextChallengeId;
+        uint256 resultCount = totalChallenges < limit ? totalChallenges : limit;
+
+        ChallengeInfo[] memory challengeInfos = new ChallengeInfo[](
+            resultCount
+        );
+
+        // Get the latest challenges (reverse order)
+        for (uint256 i = 0; i < resultCount; i++) {
+            uint256 challengeId = totalChallenges - 1 - i;
+            Challenge storage ch = challenges[challengeId];
+
+            challengeInfos[i] = ChallengeInfo({
+                challengeId: challengeId,
+                recipient: ch.recipient,
+                startTime: ch.startTime,
+                endTime: ch.endTime,
+                isPrivate: ch.isPrivate,
+                apiType: ch.apiType,
+                goalType: ch.goalType,
+                goalAmount: ch.goalAmount,
+                description: ch.description,
+                totalDonationAmount: ch.totalDonationAmount,
+                resultsFinalized: ch.resultsFinalized,
+                participantCount: ch.participantAddresses.length
+            });
+        }
+
+        return challengeInfos;
+    }
+
+    /**
+     * @notice Get all challenges where a specific address is a participant
+     * @param _participant The wallet address to filter by
+     * @return Array of ChallengeInfo structs for challenges the address participated in
+     */
+    function getChallengesForParticipant(
+        address _participant
+    ) external view returns (ChallengeInfo[] memory) {
+        // First pass: count how many challenges the participant is in
+        uint256 count = 0;
+        for (uint256 i = 0; i < nextChallengeId; i++) {
+            if (
+                challenges[i].participants[_participant].amount > 0 ||
+                challenges[i].participants[_participant].resultDeclared
+            ) {
+                count++;
+            }
+        }
+
+        // Second pass: populate the array
+        ChallengeInfo[] memory challengeInfos = new ChallengeInfo[](count);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < nextChallengeId; i++) {
+            Challenge storage ch = challenges[i];
+            if (
+                ch.participants[_participant].amount > 0 ||
+                ch.participants[_participant].resultDeclared
+            ) {
+                challengeInfos[index] = ChallengeInfo({
+                    challengeId: i,
+                    recipient: ch.recipient,
+                    startTime: ch.startTime,
+                    endTime: ch.endTime,
+                    isPrivate: ch.isPrivate,
+                    apiType: ch.apiType,
+                    goalType: ch.goalType,
+                    goalAmount: ch.goalAmount,
+                    description: ch.description,
+                    totalDonationAmount: ch.totalDonationAmount,
+                    resultsFinalized: ch.resultsFinalized,
+                    participantCount: ch.participantAddresses.length
+                });
+                index++;
+            }
+        }
+
+        return challengeInfos;
+    }
+
+    /**
+     * @notice Get participant information for a specific challenge and address
+     * @param _challengeId The ID of the challenge
+     * @param _participant The address of the participant
+     * @return ParticipantInfo struct with participant data
+     */
+    function getParticipantInfo(
+        uint256 _challengeId,
+        address _participant
+    ) external view returns (ParticipantInfo memory) {
+        require(_challengeId < nextChallengeId, "Challenge does not exist");
+
+        Challenge storage ch = challenges[_challengeId];
+        Participant storage p = ch.participants[_participant];
+
+        return
+            ParticipantInfo({
+                participantAddress: _participant,
+                amount: p.amount,
+                refundPercentage: p.refundPercentage,
+                resultDeclared: p.resultDeclared
+            });
     }
 }
