@@ -38,10 +38,13 @@ contract Motify {
     }
 
     struct Challenge {
-        address creator;
         address recipient;
+        uint256 startTime;
         uint256 endTime;
         bool isPrivate;
+        string apiType;
+        string goalType;
+        uint256 goalAmount;
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
         uint256 totalDonationAmount;
@@ -57,10 +60,13 @@ contract Motify {
 
     event ChallengeCreated(
         uint256 indexed challengeId,
-        address indexed creator,
         address recipient,
+        uint256 startTime,
         uint256 endTime,
         bool isPrivate,
+        string apiType,
+        string goalType,
+        uint256 goalAmount,
         bytes32 metadataHash
     );
     event JoinedChallenge(
@@ -103,20 +109,31 @@ contract Motify {
      */
     function createChallenge(
         address _recipient,
+        uint256 _startTime,
         uint256 _endTime,
         bool _isPrivate,
+        string calldata _apiType,
+        string calldata _goalType,
+        uint256 _goalAmount,
         address[] calldata _whitelistedParticipants,
         bytes32 _metadataHash
     ) external returns (uint256) {
         require(_recipient != address(0), "Invalid recipient address");
-        require(_endTime > block.timestamp, "End time must be in the future");
+        require(
+            _startTime > block.timestamp,
+            "Start time must be in the future"
+        );
+        require(_endTime > _startTime, "End time must be after start time");
 
         uint256 challengeId = nextChallengeId++;
         Challenge storage ch = challenges[challengeId];
-        ch.creator = msg.sender;
         ch.recipient = _recipient;
+        ch.startTime = _startTime;
         ch.endTime = _endTime;
         ch.isPrivate = _isPrivate;
+        ch.apiType = _apiType;
+        ch.goalType = _goalType;
+        ch.goalAmount = _goalAmount;
 
         if (_isPrivate) {
             require(
@@ -131,10 +148,13 @@ contract Motify {
 
         emit ChallengeCreated(
             challengeId,
-            msg.sender,
             _recipient,
+            ch.startTime,
             ch.endTime,
             _isPrivate,
+            _apiType,
+            _goalType,
+            _goalAmount,
             _metadataHash
         );
         return challengeId;
@@ -190,6 +210,7 @@ contract Motify {
         uint256 _paidAmount
     ) internal {
         Challenge storage ch = challenges[_challengeId];
+        require(block.timestamp < ch.startTime, "Cannot join after start time");
         require(block.timestamp < ch.endTime, "Challenge ended");
         require(_stakeAmount >= MIN_AMOUNT, "Below minimum");
 
