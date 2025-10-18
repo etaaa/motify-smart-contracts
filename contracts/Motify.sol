@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./IMotifyToken.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
@@ -9,7 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
  * @title Motify
  * @notice A contract for managing stake-based challenges with percentage-based refunds.
  * @dev Implements a withdrawal pattern for refunds. Donations and fees are processed in bulk by the owner.
- * @dev Results are declared in batches to support challenges with a large number of participants and avoid block gas limit issues.
+ * @dev Results are declared in batches to support challenges with a large number of participants.
+ * @dev Integrated with MotifyToken for rewarding winners with tokens backed by 50% of fees.
  */
 contract Motify {
     using SafeERC20 for IERC20;
@@ -18,18 +20,20 @@ contract Motify {
     uint256 public constant FEE_BASIS_POINTS = 1000; // 10%
     uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
+    uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
+    uint256 public constant MULTIPLIER = 10000 * 1_000_000; // 10000 * 10^6 for USDC decimals
 
     IERC20 public immutable usdc;
+    IMotifyToken public motifyToken;
     address public owner;
     uint256 public nextChallengeId;
     uint256 public collectedFees;
+    uint256 public backingPool;
 
     struct Participant {
-        // NOTE: The meaning of 'amount' changes.
-        // Before results are declared, it's the initial stake.
-        // After results are declared, it's the claimable refund amount.
+        // Before results: initial stake. After results: claimable refund amount.
         uint256 amount;
-        uint256 refundPercentage; // 0-10000 (0% to 100% in basis points) for transparency
+        uint256 refundPercentage; // 0-10000 (0% to 100% in basis points)
         bool resultDeclared;
     }
 
@@ -37,14 +41,13 @@ contract Motify {
         address creator;
         address recipient;
         uint256 endTime;
-        bool isPrivate; // If true, only whitelisted addresses can join
+        bool isPrivate;
         mapping(address => Participant) participants;
         mapping(address => bool) whitelist;
-        uint256 totalDonationAmount; // Tracks the running total of donations.
+        uint256 totalDonationAmount;
         bool resultsFinalized; // Locks the challenge after processing donations.
     }
 
-    // Store all challenges by ID
     mapping(uint256 => Challenge) public challenges;
 
     modifier onlyOwner() {
@@ -84,6 +87,15 @@ contract Motify {
         require(_usdcAddress != address(0), "USDC address cannot be zero");
         owner = msg.sender;
         usdc = IERC20(_usdcAddress);
+    }
+
+    /**
+     * @notice Set the MotifyToken address (one-time only).
+     */
+    function setTokenAddress(address _tokenAddress) external onlyOwner {
+        require(_tokenAddress != address(0), "Invalid token address");
+        require(address(motifyToken) == address(0), "Already set");
+        motifyToken = IMotifyToken(_tokenAddress);
     }
 
     /**
@@ -129,44 +141,21 @@ contract Motify {
     }
 
     /**
-     * @notice Join an existing challenge by staking USDC (requires prior approval)
+     * @notice Join an existing challenge using EIP-2612 permit
+     * @dev User must compute paidAmount off-chain and sign permit for it.
      */
-    function joinChallenge(uint256 _challengeId, uint256 _amount) external {
-        _joinChallenge(_challengeId, _amount);
-    }
-
-    /**
-     * @notice Join an existing challenge using EIP-2612 permit (single transaction, no prior approval needed)
-     */
-    function joinChallengeWithPermit(
+    function joinChallenge(
         uint256 _challengeId,
-        uint256 _amount,
+        uint256 _stakeAmount,
+        uint256 _paidAmount,
         uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) external {
-        // Execute the permit to approve this contract
-        IERC20Permit(address(usdc)).permit(
-            msg.sender,
-            address(this),
-            _amount,
-            deadline,
-            v,
-            r,
-            s
-        );
-
-        _joinChallenge(_challengeId, _amount);
-    }
-
-    /**
-     * @dev Internal function to handle the core join logic
-     */
-    function _joinChallenge(uint256 _challengeId, uint256 _amount) internal {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.endTime, "Challenge ended");
-        require(_amount >= MIN_AMOUNT, "Below minimum");
+        require(_stakeAmount >= MIN_AMOUNT, "Below minimum");
 
         if (ch.isPrivate) {
             require(
@@ -178,17 +167,47 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
         require(p.amount == 0, "Already joined");
 
-        usdc.safeTransferFrom(msg.sender, address(this), _amount);
+        uint256 discount = _stakeAmount - _paidAmount;
+        uint256 userTokens = motifyToken.balanceOf(msg.sender);
+        uint256 totalSupply_ = motifyToken.totalSupply();
+        uint256 maxDiscount = 0;
+        if (userTokens > 0 && totalSupply_ > 0 && backingPool > 0) {
+            maxDiscount = (userTokens * backingPool) / totalSupply_;
+        }
+        require(discount <= maxDiscount, "Discount exceeds available");
+        require(discount <= _stakeAmount, "Invalid discount");
 
-        p.amount = _amount;
+        // Execute permit
+        IERC20Permit(address(usdc)).permit(
+            msg.sender,
+            address(this),
+            _paidAmount,
+            deadline,
+            v,
+            r,
+            s
+        );
+
+        usdc.safeTransferFrom(msg.sender, address(this), _paidAmount);
+
+        if (discount > 0) {
+            uint256 tokensToBurn = (discount * totalSupply_) / backingPool;
+            if (tokensToBurn > userTokens) {
+                tokensToBurn = userTokens;
+            }
+            motifyToken.burn(msg.sender, tokensToBurn);
+            backingPool -= discount;
+        }
+
+        p.amount = _stakeAmount;
         p.refundPercentage = 0;
         p.resultDeclared = false;
 
-        emit JoinedChallenge(_challengeId, msg.sender, _amount);
+        emit JoinedChallenge(_challengeId, msg.sender, _stakeAmount);
     }
 
     /**
-     * @notice Owner declares refund percentages for a subset (batch) of participants.
+     * @notice Owner declares refund percentages for a batch of participants.
      * @dev Can be called multiple times until all participants are processed. Does NOT transfer funds.
      */
     function declareResults(
@@ -234,8 +253,9 @@ contract Motify {
     }
 
     /**
-     * @notice After declaring all results in batches, this function processes the total donation.
-     * @dev Can only be called once per challenge. This is the function that transfers funds.
+     * @notice Processes total donations and splits fees.
+     * @dev Can only be called once per challenge. 
+
      */
     function finalizeAndProcessDonations(
         uint256 _challengeId
@@ -244,15 +264,18 @@ contract Motify {
         require(block.timestamp >= ch.endTime, "Challenge not ended yet");
         require(!ch.resultsFinalized, "Donations have already been processed");
 
-        ch.resultsFinalized = true; // Set lock first to prevent reentrancy
+        ch.resultsFinalized = true;
 
         uint256 totalDonation = ch.totalDonationAmount;
         if (totalDonation > 0) {
             uint256 fee = (totalDonation * FEE_BASIS_POINTS) /
                 BASIS_POINTS_DIVISOR;
+            uint256 platformFee = fee / 2;
+            uint256 backingAddition = fee - platformFee;
             uint256 netDonation = totalDonation - fee;
 
-            collectedFees += fee;
+            collectedFees += platformFee;
+            backingPool += backingAddition;
             usdc.safeTransfer(ch.recipient, netDonation);
 
             emit ResultsDeclared(_challengeId, netDonation, fee);
@@ -260,7 +283,7 @@ contract Motify {
     }
 
     /**
-     * @notice A participant claims their eligible refund after results have been declared.
+     * @notice Participant claims refund and receives tokens if winner.
      */
     function claimRefund(uint256 _challengeId) external {
         Challenge storage ch = challenges[_challengeId];
@@ -276,11 +299,16 @@ contract Motify {
 
         usdc.safeTransfer(msg.sender, refundAmount);
 
+        if (refundAmount > 0) {
+            uint256 tokensToMint = refundAmount * TOKENS_PER_USDC;
+            motifyToken.mint(msg.sender, tokensToMint);
+        }
+
         emit RefundClaimed(_challengeId, msg.sender, refundAmount);
     }
 
     /**
-     * @notice A participant claims a full refund if the owner failed to declare results in time.
+     * @notice Participant claims full refund if results not declared in time.
      */
     function claimTimeoutRefund(uint256 _challengeId) external {
         Challenge storage ch = challenges[_challengeId];
