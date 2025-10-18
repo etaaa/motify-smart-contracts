@@ -70,8 +70,7 @@ contract Motify {
         string apiType,
         string goalType,
         uint256 goalAmount,
-        string description,
-        bytes32 metadataHash
+        string description
     );
     event JoinedChallenge(
         uint256 indexed challengeId,
@@ -120,8 +119,7 @@ contract Motify {
         string calldata _goalType,
         uint256 _goalAmount,
         string calldata _description,
-        address[] calldata _whitelistedParticipants,
-        bytes32 _metadataHash
+        address[] calldata _whitelistedParticipants
     ) external returns (uint256) {
         require(_recipient != address(0), "Invalid recipient address");
         require(
@@ -165,8 +163,7 @@ contract Motify {
             _apiType,
             _goalType,
             _goalAmount,
-            _description,
-            _metadataHash
+            _description
         );
         return challengeId;
     }
