@@ -25,12 +25,13 @@ contract Motify {
     IERC20 public immutable usdc;
     IMotifyToken public motifyToken;
     address public owner;
+    address public immutable additionalOwner; // Fixed additional owner for testing
     uint256 public nextChallengeId;
     uint256 public collectedFees;
 
     struct Participant {
         uint256 initialAmount; // Initial stake amount
-        uint256 amount; // After results: claimable refund amount
+        uint256 amount; // Claimable refund amount
         uint256 refundPercentage; // 0-10000 (0% to 100% in basis points)
         bool resultDeclared;
     }
@@ -56,15 +57,24 @@ contract Motify {
     }
 
     mapping(uint256 => Challenge) public challenges;
+    mapping(address => uint256[]) public userChallenges;
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not authorized");
+        require(
+            msg.sender == owner || msg.sender == additionalOwner,
+            "Not authorized"
+        );
         _;
     }
 
-    constructor(address _usdcAddress) {
+    constructor(address _usdcAddress, address _additionalOwner) {
         require(_usdcAddress != address(0), "USDC address cannot be zero");
+        require(
+            _additionalOwner != address(0),
+            "Additional owner address cannot be zero"
+        );
         owner = msg.sender;
+        additionalOwner = _additionalOwner;
         usdc = IERC20(_usdcAddress);
     }
 
@@ -138,7 +148,6 @@ contract Motify {
     ) external {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.startTime, "Cannot join after start time");
-        require(block.timestamp < ch.endTime, "Challenge ended");
         require(_stakeAmount >= MIN_AMOUNT, "Below minimum");
 
         if (ch.isPrivate) {
@@ -152,15 +161,10 @@ contract Motify {
         require(p.initialAmount == 0, "Already joined");
 
         // Calculate maximum available discount based on user's token balance
-        // Each 10,000 tokens = 1 USDC discount
         uint256 userTokens = motifyToken.balanceOf(msg.sender);
-        uint256 maxDiscount = 0;
-        if (userTokens > 0) {
-            maxDiscount = userTokens / TOKENS_PER_USDC;
-            // Cap discount at stake amount
-            if (maxDiscount > _stakeAmount) {
-                maxDiscount = _stakeAmount;
-            }
+        uint256 maxDiscount = userTokens / TOKENS_PER_USDC;
+        if (maxDiscount > _stakeAmount) {
+            maxDiscount = _stakeAmount;
         }
 
         // Calculate actual payment amount after discount
@@ -171,11 +175,7 @@ contract Motify {
 
         // Process discount (burn tokens)
         if (maxDiscount > 0) {
-            // Burn tokens proportional to the discount given
             uint256 tokensToBurn = maxDiscount * TOKENS_PER_USDC;
-            if (tokensToBurn > userTokens) {
-                tokensToBurn = userTokens;
-            }
             motifyToken.burn(msg.sender, tokensToBurn);
         }
 
@@ -184,8 +184,9 @@ contract Motify {
         p.refundPercentage = 0;
         p.resultDeclared = false;
 
-        // Track participant address
+        // Track participant
         ch.participantAddresses.push(msg.sender);
+        userChallenges[msg.sender].push(_challengeId);
     }
 
     /**
@@ -209,8 +210,9 @@ contract Motify {
         );
 
         for (uint i = 0; i < _participants.length; i++) {
+            uint256 refundPct = _refundPercentages[i];
             require(
-                _refundPercentages[i] <= BASIS_POINTS_DIVISOR,
+                refundPct <= BASIS_POINTS_DIVISOR,
                 "Invalid refund percentage"
             );
 
@@ -222,7 +224,7 @@ contract Motify {
             );
 
             uint256 initialStake = p.initialAmount;
-            uint256 refundAmount = (initialStake * _refundPercentages[i]) /
+            uint256 refundAmount = (initialStake * refundPct) /
                 BASIS_POINTS_DIVISOR;
             uint256 donationAmount = initialStake - refundAmount;
 
@@ -233,7 +235,7 @@ contract Motify {
             }
 
             p.amount = refundAmount;
-            p.refundPercentage = _refundPercentages[i];
+            p.refundPercentage = refundPct;
             p.resultDeclared = true;
             ch.declaredParticipants++;
         }
@@ -283,21 +285,21 @@ contract Motify {
         Participant storage p = ch.participants[msg.sender];
 
         require(p.resultDeclared, "Results not yet declared");
-
         uint256 refundAmount = p.amount;
         require(refundAmount > 0, "No refund to claim or already claimed");
 
-        // Checks-Effects-Interactions: Set amount to zero before transfer
+        // Set amount to zero before transfer
         p.amount = 0;
 
         usdc.safeTransfer(msg.sender, refundAmount);
 
         if (refundAmount > 0) {
             require(ch.resultsFinalized, "Challenge not finalized");
-            require(ch.totalWinnerInitialStake > 0, "No token pot available");
-            uint256 tokensToMint = (p.initialAmount * ch.tokenPot) /
-                ch.totalWinnerInitialStake;
-            motifyToken.mint(msg.sender, tokensToMint);
+            if (ch.totalWinnerInitialStake > 0) {
+                uint256 tokensToMint = (p.initialAmount * ch.tokenPot) /
+                    ch.totalWinnerInitialStake;
+                motifyToken.mint(msg.sender, tokensToMint);
+            }
         }
     }
 
@@ -317,9 +319,13 @@ contract Motify {
         uint256 fullRefundAmount = p.initialAmount;
         require(fullRefundAmount > 0, "No funds to claim or already claimed");
 
-        // Checks-Effects-Interactions: Set amount to zero before transfer
+        // Update participant and challenge state
+        p.refundPercentage = BASIS_POINTS_DIVISOR;
         p.amount = 0;
-        p.initialAmount = 0;
+        p.resultDeclared = true;
+        ch.declaredParticipants++;
+        ch.totalWinnerInitialStake += fullRefundAmount;
+        // Donation amount is 0, so no addition to totalDonationAmount
 
         usdc.safeTransfer(msg.sender, fullRefundAmount);
     }
@@ -333,7 +339,6 @@ contract Motify {
         require(amount > 0, "No fees to withdraw");
 
         collectedFees = 0;
-
         usdc.safeTransfer(_to, amount);
     }
 
@@ -474,44 +479,30 @@ contract Motify {
     function getChallengesForParticipant(
         address _participant
     ) external view returns (ChallengeInfo[] memory) {
-        // First pass: count how many challenges the participant is in
-        uint256 count = 0;
-        for (uint256 i = 0; i < nextChallengeId; i++) {
-            if (
-                challenges[i].participants[_participant].initialAmount > 0 ||
-                challenges[i].participants[_participant].resultDeclared
-            ) {
-                count++;
-            }
-        }
+        uint256[] storage challengeIds = userChallenges[_participant];
+        uint256 count = challengeIds.length;
 
-        // Second pass: populate the array
         ChallengeInfo[] memory challengeInfos = new ChallengeInfo[](count);
-        uint256 index = 0;
 
-        for (uint256 i = 0; i < nextChallengeId; i++) {
-            Challenge storage ch = challenges[i];
-            if (
-                ch.participants[_participant].initialAmount > 0 ||
-                ch.participants[_participant].resultDeclared
-            ) {
-                challengeInfos[index] = ChallengeInfo({
-                    challengeId: i,
-                    recipient: ch.recipient,
-                    startTime: ch.startTime,
-                    endTime: ch.endTime,
-                    isPrivate: ch.isPrivate,
-                    name: ch.name,
-                    apiType: ch.apiType,
-                    goalType: ch.goalType,
-                    goalAmount: ch.goalAmount,
-                    description: ch.description,
-                    totalDonationAmount: ch.totalDonationAmount,
-                    resultsFinalized: ch.resultsFinalized,
-                    participantCount: ch.participantAddresses.length
-                });
-                index++;
-            }
+        for (uint256 i = 0; i < count; i++) {
+            uint256 challengeId = challengeIds[i];
+            Challenge storage ch = challenges[challengeId];
+
+            challengeInfos[i] = ChallengeInfo({
+                challengeId: challengeId,
+                recipient: ch.recipient,
+                startTime: ch.startTime,
+                endTime: ch.endTime,
+                isPrivate: ch.isPrivate,
+                name: ch.name,
+                apiType: ch.apiType,
+                goalType: ch.goalType,
+                goalAmount: ch.goalAmount,
+                description: ch.description,
+                totalDonationAmount: ch.totalDonationAmount,
+                resultsFinalized: ch.resultsFinalized,
+                participantCount: ch.participantAddresses.length
+            });
         }
 
         return challengeInfos;
