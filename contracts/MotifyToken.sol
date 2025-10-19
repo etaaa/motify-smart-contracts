@@ -51,14 +51,4 @@ contract MotifyToken is ERC20, IMotifyToken {
     ) public view override(ERC20, IMotifyToken) returns (uint256) {
         return super.balanceOf(account);
     }
-
-    // Explicitly override totalSupply to resolve conflict between ERC20 and IMotifyToken
-    function totalSupply()
-        public
-        view
-        override(ERC20, IMotifyToken)
-        returns (uint256)
-    {
-        return super.totalSupply();
-    }
 }

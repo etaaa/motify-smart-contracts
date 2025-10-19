@@ -20,7 +20,6 @@ contract Motify {
     uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
     uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
-    uint256 public constant MULTIPLIER = 10000 * 1_000_000; // 10000 * 10^6 for USDC decimals
     uint256 public constant MAX_DESCRIPTION_LENGTH = 160; // Maximum characters for challenge description
 
     IERC20 public immutable usdc;
@@ -28,7 +27,6 @@ contract Motify {
     address public owner;
     uint256 public nextChallengeId;
     uint256 public collectedFees;
-    uint256 public backingPool;
 
     struct Participant {
         // Before results: initial stake. After results: claimable refund amount.
@@ -196,11 +194,11 @@ contract Motify {
         require(p.amount == 0, "Already joined");
 
         // Calculate maximum available discount based on user's token balance
+        // Each 10,000 tokens = 1 USDC discount
         uint256 userTokens = motifyToken.balanceOf(msg.sender);
-        uint256 totalSupply_ = motifyToken.totalSupply();
         uint256 maxDiscount = 0;
-        if (userTokens > 0 && totalSupply_ > 0 && backingPool > 0) {
-            maxDiscount = (userTokens * backingPool) / totalSupply_;
+        if (userTokens > 0) {
+            maxDiscount = userTokens / 10000;
             // Cap discount at stake amount
             if (maxDiscount > _stakeAmount) {
                 maxDiscount = _stakeAmount;
@@ -215,12 +213,12 @@ contract Motify {
 
         // Process discount (burn tokens)
         if (maxDiscount > 0) {
-            uint256 tokensToBurn = (maxDiscount * totalSupply_) / backingPool;
+            // Burn tokens proportional to the discount given
+            uint256 tokensToBurn = maxDiscount * 10000;
             if (tokensToBurn > userTokens) {
                 tokensToBurn = userTokens;
             }
             motifyToken.burn(msg.sender, tokensToBurn);
-            backingPool -= maxDiscount;
         }
 
         p.amount = _stakeAmount;
@@ -298,11 +296,9 @@ contract Motify {
             uint256 fee = (totalDonation * FEE_BASIS_POINTS) /
                 BASIS_POINTS_DIVISOR;
             uint256 platformFee = fee / 2;
-            uint256 backingAddition = fee - platformFee;
             uint256 netDonation = totalDonation - fee;
 
             collectedFees += platformFee;
-            backingPool += backingAddition;
             usdc.safeTransfer(ch.recipient, netDonation);
 
             emit ResultsDeclared(_challengeId, netDonation, fee);
