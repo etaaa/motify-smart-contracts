@@ -19,6 +19,7 @@ contract Motify {
     uint256 public constant FEE_BASIS_POINTS = 1000; // 10%
     uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
+    uint256 public constant FINALIZATION_TIMEOUT = 7 days; // Time window to finalize after all results declared
     uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
     uint256 public constant MAX_DESCRIPTION_LENGTH = 160; // Maximum characters for challenge description
 
@@ -243,11 +244,9 @@ contract Motify {
 
     /**
      * @notice Processes total donations and splits fees.
-     * @dev Can only be called once per challenge.
+     * @dev Can only be called once per challenge. Owner should call this, but anyone can call after timeout.
      */
-    function finalizeAndProcessDonations(
-        uint256 _challengeId
-    ) external onlyOwner {
+    function finalizeAndProcessDonations(uint256 _challengeId) external {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp >= ch.endTime, "Challenge not ended yet");
         require(!ch.resultsFinalized, "Donations have already been processed");
@@ -255,6 +254,14 @@ contract Motify {
             ch.declaredParticipants == ch.participantAddresses.length,
             "Not all results declared"
         );
+
+        // Only owner can call before timeout, anyone can call after timeout
+        if (msg.sender != owner && msg.sender != additionalOwner) {
+            require(
+                block.timestamp > ch.endTime + FINALIZATION_TIMEOUT,
+                "Only owner can finalize before timeout"
+            );
+        }
 
         ch.resultsFinalized = true;
 
