@@ -62,38 +62,6 @@ contract Motify {
         _;
     }
 
-    event ChallengeCreated(
-        uint256 indexed challengeId,
-        address recipient,
-        uint256 startTime,
-        uint256 endTime,
-        bool isPrivate,
-        string name,
-        string apiType,
-        string goalType,
-        uint256 goalAmount,
-        string description
-    );
-    event JoinedChallenge(
-        uint256 indexed challengeId,
-        address indexed user,
-        uint256 amount
-    );
-    event ResultsDeclared(
-        uint256 indexed challengeId,
-        uint256 totalDonationAmount,
-        uint256 feesCollected
-    );
-    event RefundClaimed(
-        uint256 indexed challengeId,
-        address indexed user,
-        uint256 refundAmount
-    );
-    event ParticipantsWhitelisted(
-        uint256 indexed challengeId,
-        address[] participants
-    );
-
     constructor(address _usdcAddress) {
         require(_usdcAddress != address(0), "USDC address cannot be zero");
         owner = msg.sender;
@@ -155,21 +123,8 @@ contract Motify {
             for (uint i = 0; i < _whitelistedParticipants.length; i++) {
                 ch.whitelist[_whitelistedParticipants[i]] = true;
             }
-            emit ParticipantsWhitelisted(challengeId, _whitelistedParticipants);
         }
 
-        emit ChallengeCreated(
-            challengeId,
-            _recipient,
-            ch.startTime,
-            ch.endTime,
-            _isPrivate,
-            _name,
-            _apiType,
-            _goalType,
-            _goalAmount,
-            _description
-        );
         return challengeId;
     }
 
@@ -231,8 +186,6 @@ contract Motify {
 
         // Track participant address
         ch.participantAddresses.push(msg.sender);
-
-        emit JoinedChallenge(_challengeId, msg.sender, _stakeAmount);
     }
 
     /**
@@ -319,8 +272,6 @@ contract Motify {
 
             collectedFees += platformFee;
             usdc.safeTransfer(ch.recipient, netDonation);
-
-            emit ResultsDeclared(_challengeId, netDonation, fee);
         }
     }
 
@@ -348,8 +299,6 @@ contract Motify {
                 ch.totalWinnerInitialStake;
             motifyToken.mint(msg.sender, tokensToMint);
         }
-
-        emit RefundClaimed(_challengeId, msg.sender, refundAmount);
     }
 
     /**
@@ -373,8 +322,6 @@ contract Motify {
         p.initialAmount = 0;
 
         usdc.safeTransfer(msg.sender, fullRefundAmount);
-
-        emit RefundClaimed(_challengeId, msg.sender, fullRefundAmount);
     }
 
     /**
