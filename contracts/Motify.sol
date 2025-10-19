@@ -43,6 +43,7 @@ contract Motify {
         uint256 startTime;
         uint256 endTime;
         bool isPrivate;
+        string name;
         string apiType;
         string goalType;
         uint256 goalAmount;
@@ -67,6 +68,7 @@ contract Motify {
         uint256 startTime,
         uint256 endTime,
         bool isPrivate,
+        string name,
         string apiType,
         string goalType,
         uint256 goalAmount,
@@ -115,6 +117,7 @@ contract Motify {
         uint256 _startTime,
         uint256 _endTime,
         bool _isPrivate,
+        string calldata _name,
         string calldata _apiType,
         string calldata _goalType,
         uint256 _goalAmount,
@@ -138,6 +141,7 @@ contract Motify {
         ch.startTime = _startTime;
         ch.endTime = _endTime;
         ch.isPrivate = _isPrivate;
+        ch.name = _name;
         ch.apiType = _apiType;
         ch.goalType = _goalType;
         ch.goalAmount = _goalAmount;
@@ -160,6 +164,7 @@ contract Motify {
             ch.startTime,
             ch.endTime,
             _isPrivate,
+            _name,
             _apiType,
             _goalType,
             _goalAmount,
@@ -419,6 +424,7 @@ contract Motify {
         uint256 startTime;
         uint256 endTime;
         bool isPrivate;
+        string name;
         string apiType;
         string goalType;
         uint256 goalAmount;
@@ -434,6 +440,7 @@ contract Motify {
         uint256 startTime;
         uint256 endTime;
         bool isPrivate;
+        string name;
         string apiType;
         string goalType;
         uint256 goalAmount;
@@ -479,6 +486,7 @@ contract Motify {
                 startTime: ch.startTime,
                 endTime: ch.endTime,
                 isPrivate: ch.isPrivate,
+                name: ch.name,
                 apiType: ch.apiType,
                 goalType: ch.goalType,
                 goalAmount: ch.goalAmount,
@@ -516,6 +524,7 @@ contract Motify {
                 startTime: ch.startTime,
                 endTime: ch.endTime,
                 isPrivate: ch.isPrivate,
+                name: ch.name,
                 apiType: ch.apiType,
                 goalType: ch.goalType,
                 goalAmount: ch.goalAmount,
@@ -564,6 +573,7 @@ contract Motify {
                     startTime: ch.startTime,
                     endTime: ch.endTime,
                     isPrivate: ch.isPrivate,
+                    name: ch.name,
                     apiType: ch.apiType,
                     goalType: ch.goalType,
                     goalAmount: ch.goalAmount,
