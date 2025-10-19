@@ -21,46 +21,53 @@ Motify is a stake-based challenge system on Base (an Ethereum L2). Users commit 
 - `MotifyToken.sol` & `IMotifyToken.sol`: ERC20 token for rewarding winners, minting and burning controlled by Motify
 - `MockUSDC.sol`: Mock USDC token for testing
 
-## Step-by-Step Tutorial: Testing Motify Contracts
+## Local Development
 
-1. **Open Remix IDE**
-	- Go to [Remix IDE](https://remix.ethereum.org) in your browser.
+### Prerequisites
 
-2. **Upload Contracts**
-	- Drag and drop all files from the `contracts/` folder (`Motify.sol`, `MotifyToken.sol`, `IMotifyToken.sol`, `MockUSDT.sol`) into Remix.
+- [Node.js](https://nodejs.org/en/) (v18 or later)
+- [npm](https://www.npmjs.com/)
 
-3. **Compile Contracts**
-	- Set the Solidity compiler version to `^0.8.20`.
-	- Compile each contract.
+### Setup
 
-4. **Deploy Mock USDC**
-	- Deploy `MockUSDC.sol`.
-	- This gives you test USDC tokens.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/etaaa/motify-smart-contract.git
+   cd motify-smart-contract
+   ```
 
-5. **Deploy Motify Contract**
-	- Deploy `Motify.sol`, passing the address of the deployed Mock USDC contract as the constructor argument.
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-6. **Deploy MotifyToken Contract**
-	- Deploy `MotifyToken.sol`, passing the address of the deployed Motify contract as the constructor argument.
+3. **Create environment file:**
+   Create a `.env` file in the root of the project and add the following environment variables.
+   ```
+   BASE_SEPOLIA_RPC_URL="<your-base-sepolia-rpc-url>"
+   PRIVATE_KEY="<your-private-key>"
+   BASESCAN_API_KEY="<your-basescan-api-key>"
+   ```
 
-7. **Set MotifyToken in Motify**
-	- In Remix, call the function on Motify to set the MotifyToken contract address.
+### Compile
 
-8. **Mint and Approve USDC**
-	- Use the Mock USDC contract to mint tokens to your test account.
-	- Approve the Motify contract to spend your USDC using the `approve` function in Mock USDC.
+Compile the smart contracts:
+```bash
+npx hardhat compile
+```
 
-9. **Create a Challenge**
-	- Use Motify’s function to create a new challenge. Provide required parameters.
+### Test
 
-10. **Join a Challenge**
-	 - Call the join function in Motify, staking USDC.
+Run the test suite:
+```bash
+npx hardhat test
+```
 
-11. **Declare Results**
-	 - As the challenge creator, declare results for participants.
+### Deployment
 
-12. **Claim Refunds and Rewards**
-	 - Participants can claim their USDC refunds and Motify token rewards.
+To deploy the contracts to a network, first configure your `hardhat.config.js` with the desired network and a private key.
 
-13. **Burn Motify Tokens for Discounts**
-	 - Use MotifyToken’s `burn` function to burn tokens.
+Then, run the deployment script:
+```bash
+npx hardhat run scripts/deploy.js --network <your-network-name>
+```
