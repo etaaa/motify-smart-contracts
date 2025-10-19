@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import "./IMotifyToken.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
 /**
  * @title Motify
@@ -174,52 +173,13 @@ contract Motify {
     }
 
     /**
-     * @notice Join an existing challenge using EIP-2612 permit
-     */
-    function joinChallengeWithPermit(
-        uint256 _challengeId,
-        uint256 _stakeAmount,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        // Execute permit to get approval (using stake amount as upper bound)
-        IERC20Permit(address(usdc)).permit(
-            msg.sender,
-            address(this),
-            _stakeAmount,
-            deadline,
-            v,
-            r,
-            s
-        );
-
-        _joinChallengeLogic(_challengeId, _stakeAmount);
-    }
-
-    /**
-     * @notice Join a challenge using the standard approve/transferFrom pattern
+     * @notice Join a challenge
      * @dev User must have already called usdc.approve(address(this), stakeAmount)
      */
-    function joinChallengeWithApprove(
+    function joinChallenge(
         uint256 _challengeId,
         uint256 _stakeAmount
     ) external {
-        _joinChallengeLogic(_challengeId, _stakeAmount);
-    }
-
-    /**
-     * @notice Internal logic for joining a challenge.
-     * @dev Handles all checks, discount logic, token transfer, and state updates.
-     * @dev Assumes approval (either via permit or approve) has been handled
-     * by the calling function.
-     * @dev Calculates the maximum available discount and applies it automatically.
-     */
-    function _joinChallengeLogic(
-        uint256 _challengeId,
-        uint256 _stakeAmount
-    ) internal {
         Challenge storage ch = challenges[_challengeId];
         require(block.timestamp < ch.startTime, "Cannot join after start time");
         require(block.timestamp < ch.endTime, "Challenge ended");
