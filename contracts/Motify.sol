@@ -21,7 +21,6 @@ contract Motify {
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
     uint256 public constant FINALIZATION_TIMEOUT = 7 days; // Time window to finalize after all results declared
     uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
-    uint256 public constant MAX_DESCRIPTION_LENGTH = 160; // Maximum characters for challenge description
 
     IERC20 public immutable usdc;
     IMotifyToken public motifyToken;
@@ -109,10 +108,6 @@ contract Motify {
             "Start time must be in the future"
         );
         require(_endTime > _startTime, "End time must be after start time");
-        require(
-            bytes(_description).length <= MAX_DESCRIPTION_LENGTH,
-            "Description too long"
-        );
 
         uint256 challengeId = nextChallengeId++;
         Challenge storage ch = challenges[challengeId];
