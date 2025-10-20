@@ -20,7 +20,10 @@ contract Motify {
     uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
     uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
     uint256 public constant FINALIZATION_TIMEOUT = 7 days; // Time window to finalize after all results declared
-    uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens
+    uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens (before decimals)
+    uint256 public constant USDC_DECIMALS = 6;
+    uint256 public constant TOKEN_DECIMALS = 18;
+    uint256 public constant DECIMAL_DIFF = TOKEN_DECIMALS - USDC_DECIMALS; // 12
 
     IERC20 public immutable usdc;
     IMotifyToken public motifyToken;
@@ -158,7 +161,9 @@ contract Motify {
 
         // Calculate maximum available discount based on user's token balance
         uint256 userTokens = motifyToken.balanceOf(msg.sender);
-        uint256 maxDiscount = userTokens / TOKENS_PER_USDC;
+        // Convert tokens (18 decimals) to USDC equivalent (6 decimals)
+        uint256 maxDiscount = userTokens /
+            (TOKENS_PER_USDC * (10 ** DECIMAL_DIFF));
         if (maxDiscount > _stakeAmount) {
             maxDiscount = _stakeAmount;
         }
@@ -171,7 +176,10 @@ contract Motify {
 
         // Process discount (burn tokens)
         if (maxDiscount > 0) {
-            uint256 tokensToBurn = maxDiscount * TOKENS_PER_USDC;
+            // Convert USDC discount (6 decimals) to token amount (18 decimals)
+            uint256 tokensToBurn = maxDiscount *
+                TOKENS_PER_USDC *
+                (10 ** DECIMAL_DIFF);
             motifyToken.burn(msg.sender, tokensToBurn);
         }
 
@@ -269,7 +277,8 @@ contract Motify {
             uint256 netDonation = totalDonation - fee;
 
             if (ch.totalWinnerInitialStake > 0) {
-                ch.tokenPot = tokenFee * TOKENS_PER_USDC;
+                // Convert USDC fee (6 decimals) to token amount (18 decimals)
+                ch.tokenPot = tokenFee * TOKENS_PER_USDC * (10 ** DECIMAL_DIFF);
             } else {
                 platformFee += tokenFee;
             }

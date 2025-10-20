@@ -24,11 +24,10 @@ Motify is a stake-based challenge system on Base (an Ethereum L2). Users commit 
 
 - **Stake-Based Challenges:** Stake USDC to join public or private challenges.
 - **Performance-Based Refunds:** Get back 0–100% of your stake depending on your challenge results.
-- **Token Rewards:** Winners receive Motify tokens (10,000 MOTIFY per USDC refunded).
+- **Proportional Token Rewards:** Winners receive a share of a token pot, funded by a portion of the fees from non-winning stakes.
 - **Discounts via Token Burn:** Burn Motify tokens to reduce the USDC required to join new challenges.
-- **One-Click Join (EIP-2612):** Join challenges in a single transaction using permit (no separate approval needed).
-- **Donation Fee Structure:** 10% fee on donations (split: 5% to platform, 5% to token backing pool).
-- **Automatic Timeout Protection:** If results aren’t declared within 7 days, participants are auto-refunded.
+- **Donation Fee Structure:** A 10% fee is applied to all non-refunded stakes (donations), which is then split between the platform and the token reward pool.
+- **Automatic Timeout Protection:** If results aren’t declared within 7 days of the challenge ending, participants can claim a full refund.
 
 ## Architecture
 
@@ -36,20 +35,9 @@ The Motify protocol is composed of three main contracts:
 
 -   **`Motify.sol`**: This is the core contract that orchestrates the challenge logic. It handles challenge creation, user participation (staking), result declaration, and the distribution of refunds and rewards. It holds the staked USDC in escrow during a challenge.
 
--   **`MotifyToken.sol`**: An ERC20 token that is rewarded to challenge winners. The `Motify` contract has the exclusive right to mint new `MotifyToken`s. The token also includes a `burn` function that allows users to get discounts on future challenges.
+-   **`MotifyToken.sol`**: An ERC20 token that is rewarded to challenge winners. The `Motify` contract has the exclusive right to mint these tokens. The contract also includes a `burn` function that allows users to get discounts on future challenges.
 
--   **`MockUSDC.sol`**: A mock ERC20 token that mimics USDC for testing purposes in a local development environment. It provides a `mint` function to allow test accounts to get tokens freely.
-
-## Deployed Contracts
-
-You can find the deployed contracts at the following addresses:
-
--   **Base Mainnet:**
-    -   `Motify.sol`: `0x...`
-    -   `MotifyToken.sol`: `0x...`
--   **Base Sepolia (Testnet):**
-    -   `Motify.sol`: `0x53Da03A36Aa9333C41C5521A113d0f8BA028bC43`
-    -   `MotifyToken.sol`: `0xc19112393585Af1250352AF7B4EDdc23d8a55c3a`
+-   **`MockUSDC.sol`** (for testing only): A mock ERC20 token that mimics USDC for testing purposes in a local development environment. It provides a `mint` function to allow test accounts to get tokens freely.
 
 ## Local Development
 
