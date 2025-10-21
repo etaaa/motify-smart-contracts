@@ -9,7 +9,6 @@
 - [Introduction](#introduction)
 - [Features](#features)
 - [Architecture](#architecture)
-- [Deployed Contracts](#deployed-contracts)
 - [Local Development](#local-development)
 - [Contributing](#contributing)
 - [License](#license)
