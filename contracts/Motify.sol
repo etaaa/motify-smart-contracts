@@ -15,22 +15,6 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract Motify {
     using SafeERC20 for IERC20;
 
-    uint256 public constant MIN_AMOUNT = 1e6; // 1 USDC (6 decimals)
-    uint256 public constant FEE_BASIS_POINTS = 1000; // 10%
-    uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
-    uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
-    uint256 public constant FINALIZATION_TIMEOUT = 7 days; // Time window to finalize after all results declared
-    uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens (before decimals)
-    uint256 public constant USDC_DECIMALS = 6;
-    uint256 public constant TOKEN_DECIMALS = 18;
-    uint256 public constant DECIMAL_DIFF = TOKEN_DECIMALS - USDC_DECIMALS; // 12
-
-    IERC20 public immutable usdc;
-    IMotifyToken public motifyToken;
-    address public owner;
-    uint256 public nextChallengeId;
-    uint256 public collectedFees;
-
     struct Participant {
         uint256 initialAmount; // Initial stake amount
         uint256 amount; // Claimable refund amount
@@ -58,8 +42,87 @@ contract Motify {
         bool resultsFinalized; // Locks the challenge after processing donations.
     }
 
+    struct ParticipantInfo {
+        address participantAddress;
+        uint256 initialAmount;
+        uint256 amount;
+        uint256 refundPercentage;
+        bool resultDeclared;
+    }
+
+    struct ChallengeInfo {
+        uint256 challengeId;
+        address recipient;
+        uint256 startTime;
+        uint256 endTime;
+        bool isPrivate;
+        string name;
+        string apiType;
+        string goalType;
+        uint256 goalAmount;
+        string description;
+        uint256 totalDonationAmount;
+        bool resultsFinalized;
+        uint256 participantCount;
+    }
+
+    struct ChallengeDetail {
+        uint256 challengeId;
+        address recipient;
+        uint256 startTime;
+        uint256 endTime;
+        bool isPrivate;
+        string name;
+        string apiType;
+        string goalType;
+        uint256 goalAmount;
+        string description;
+        uint256 totalDonationAmount;
+        bool resultsFinalized;
+        ParticipantInfo[] participants;
+    }
+
+    uint256 public constant MIN_AMOUNT = 1e6; // 1 USDC (6 decimals)
+    uint256 public constant FEE_BASIS_POINTS = 1000; // 10%
+    uint256 public constant BASIS_POINTS_DIVISOR = 10000; // 100% = 10000 basis points
+    uint256 public constant DECLARATION_TIMEOUT = 7 days; // Time window to declare results
+    uint256 public constant FINALIZATION_TIMEOUT = 7 days; // Time window to finalize after all results declared
+    uint256 public constant TOKENS_PER_USDC = 10000; // 1 USDC = 10000 tokens (before decimals)
+    uint256 public constant USDC_DECIMALS = 6;
+    uint256 public constant TOKEN_DECIMALS = 18;
+    uint256 public constant DECIMAL_DIFF = TOKEN_DECIMALS - USDC_DECIMALS; // 12
+
+    IERC20 public immutable usdc;
+    IMotifyToken public motifyToken;
+    address public owner;
+    uint256 public nextChallengeId;
+    uint256 public collectedFees;
+
     mapping(uint256 => Challenge) public challenges;
     mapping(address => uint256[]) public userChallenges;
+
+    event ChallengeCreated(uint256 indexed challengeId);
+
+    event ChallengeJoined(
+        uint256 indexed challengeId,
+        address indexed participant
+    );
+
+    event ResultsDeclared(uint256 indexed challengeId);
+
+    event DonationsFinalized(uint256 indexed challengeId);
+
+    event RefundClaimed(
+        uint256 indexed challengeId,
+        address indexed participant
+    );
+
+    event TimeoutRefundClaimed(
+        uint256 indexed challengeId,
+        address indexed participant
+    );
+
+    event FeesWithdrawn(address indexed to, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not authorized");
@@ -125,6 +188,7 @@ contract Motify {
             }
         }
 
+        emit ChallengeCreated(challengeId);
         return challengeId;
     }
 
@@ -182,6 +246,8 @@ contract Motify {
         // Track participant
         ch.participantAddresses.push(msg.sender);
         userChallenges[msg.sender].push(_challengeId);
+
+        emit ChallengeJoined(_challengeId, msg.sender);
     }
 
     /**
@@ -234,6 +300,7 @@ contract Motify {
             p.resultDeclared = true;
             ch.declaredParticipants++;
         }
+        emit ResultsDeclared(_challengeId);
     }
 
     /**
@@ -260,12 +327,15 @@ contract Motify {
         ch.resultsFinalized = true;
 
         uint256 totalDonation = ch.totalDonationAmount;
+        uint256 fee;
+        uint256 platformFee;
+        uint256 tokenFee;
+        uint256 netDonation;
         if (totalDonation > 0) {
-            uint256 fee = (totalDonation * FEE_BASIS_POINTS) /
-                BASIS_POINTS_DIVISOR;
-            uint256 platformFee = fee / 2;
-            uint256 tokenFee = fee - platformFee;
-            uint256 netDonation = totalDonation - fee;
+            fee = (totalDonation * FEE_BASIS_POINTS) / BASIS_POINTS_DIVISOR;
+            platformFee = fee / 2;
+            tokenFee = fee - platformFee;
+            netDonation = totalDonation - fee;
 
             if (ch.totalWinnerInitialStake > 0) {
                 // Convert USDC fee (6 decimals) to token amount (18 decimals)
@@ -277,6 +347,7 @@ contract Motify {
             collectedFees += platformFee;
             usdc.safeTransfer(ch.recipient, netDonation);
         }
+        emit DonationsFinalized(_challengeId);
     }
 
     /**
@@ -295,14 +366,17 @@ contract Motify {
 
         usdc.safeTransfer(msg.sender, refundAmount);
 
+        uint256 tokensToMint = 0;
         if (refundAmount > 0) {
             require(ch.resultsFinalized, "Challenge not finalized");
             if (ch.totalWinnerInitialStake > 0) {
-                uint256 tokensToMint = (p.initialAmount * ch.tokenPot) /
+                tokensToMint =
+                    (p.initialAmount * ch.tokenPot) /
                     ch.totalWinnerInitialStake;
                 motifyToken.mint(msg.sender, tokensToMint);
             }
         }
+        emit RefundClaimed(_challengeId, msg.sender);
     }
 
     /**
@@ -330,6 +404,7 @@ contract Motify {
         // Donation amount is 0, so no addition to totalDonationAmount
 
         usdc.safeTransfer(msg.sender, fullRefundAmount);
+        emit TimeoutRefundClaimed(_challengeId, msg.sender);
     }
 
     /**
@@ -342,46 +417,7 @@ contract Motify {
 
         collectedFees = 0;
         usdc.safeTransfer(_to, amount);
-    }
-
-    struct ParticipantInfo {
-        address participantAddress;
-        uint256 initialAmount;
-        uint256 amount;
-        uint256 refundPercentage;
-        bool resultDeclared;
-    }
-
-    struct ChallengeInfo {
-        uint256 challengeId;
-        address recipient;
-        uint256 startTime;
-        uint256 endTime;
-        bool isPrivate;
-        string name;
-        string apiType;
-        string goalType;
-        uint256 goalAmount;
-        string description;
-        uint256 totalDonationAmount;
-        bool resultsFinalized;
-        uint256 participantCount;
-    }
-
-    struct ChallengeDetail {
-        uint256 challengeId;
-        address recipient;
-        uint256 startTime;
-        uint256 endTime;
-        bool isPrivate;
-        string name;
-        string apiType;
-        string goalType;
-        uint256 goalAmount;
-        string description;
-        uint256 totalDonationAmount;
-        bool resultsFinalized;
-        ParticipantInfo[] participants;
+        emit FeesWithdrawn(_to, amount);
     }
 
     /**

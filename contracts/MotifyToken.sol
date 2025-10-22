@@ -11,6 +11,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract MotifyToken is IMotifyToken, ERC20 {
     address public immutable motify;
 
+    event Mint(address indexed to, uint256 amount);
+
+    event Burn(address indexed from, uint256 amount);
+
     modifier onlyMotify() {
         require(msg.sender == motify, "Not authorized");
         _;
@@ -23,10 +27,12 @@ contract MotifyToken is IMotifyToken, ERC20 {
 
     function mint(address to, uint256 amount) external override onlyMotify {
         _mint(to, amount);
+        emit Mint(to, amount);
     }
 
     function burn(address from, uint256 amount) external override onlyMotify {
         _burn(from, amount);
+        emit Burn(from, amount);
     }
 
     function balanceOf(
