@@ -34,7 +34,7 @@ async function main() {
     const usdcAddress = await usdc.getAddress();
 
     const Motify = await hre.ethers.getContractFactory("Motify");
-    const motify = await Motify.deploy(usdcAddress, deployer.address);
+    const motify = await Motify.deploy(usdcAddress);
     await motify.waitForDeployment();
     const motifyAddress = await motify.getAddress();
 

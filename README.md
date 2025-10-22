@@ -61,32 +61,44 @@ The Motify protocol is composed of three main contracts:
 3. **Create environment file:**
    Create a `.env` file in the root of the project and add the following environment variables.
    ```
-   BASE_SEPOLIA_RPC_URL="<your-base-sepolia-rpc-url>"
    PRIVATE_KEY="<your-private-key>"
-   BASESCAN_API_KEY="<your-basescan-api-key>"
+   ETHERSCAN_API_KEY="<your-etherscan-api-key>"
+   USDC_ADDRESS="<usdc-contract-address-for-mainnet>"
    ```
+   Note: For Base mainnet, use `USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. For testnets, leave it empty to deploy MockUSDC.
 
 ### Compile
 
 Compile the smart contracts:
 ```bash
-npx hardhat compile
+npm run compile
 ```
 
 ### Test
 
 Run the test suite:
 ```bash
-npx hardhat test
+npm test
 ```
 
 ### Deployment
 
-To deploy the contracts to a network, first configure your `hardhat.config.js` with the desired network and a private key.
-
-Then, run the deployment script:
+Deploy to Base Sepolia testnet:
 ```bash
-npx hardhat run scripts/deploy.js --network <your-network-name>
+npm run deploy:base-sepolia
+```
+
+Deploy to Base mainnet:
+```bash
+npm run deploy:base
+```
+
+### Contract Verification
+
+Verify contracts on Basescan:
+```bash
+npx hardhat verify --network baseSepolia <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
+npx hardhat verify --network base <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
 ```
 
 ## Contributing

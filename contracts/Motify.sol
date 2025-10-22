@@ -28,7 +28,6 @@ contract Motify {
     IERC20 public immutable usdc;
     IMotifyToken public motifyToken;
     address public owner;
-    address public immutable additionalOwner; // Fixed additional owner for testing
     uint256 public nextChallengeId;
     uint256 public collectedFees;
 
@@ -63,21 +62,13 @@ contract Motify {
     mapping(address => uint256[]) public userChallenges;
 
     modifier onlyOwner() {
-        require(
-            msg.sender == owner || msg.sender == additionalOwner,
-            "Not authorized"
-        );
+        require(msg.sender == owner, "Not authorized");
         _;
     }
 
-    constructor(address _usdcAddress, address _additionalOwner) {
+    constructor(address _usdcAddress) {
         require(_usdcAddress != address(0), "USDC address cannot be zero");
-        require(
-            _additionalOwner != address(0),
-            "Additional owner address cannot be zero"
-        );
         owner = msg.sender;
-        additionalOwner = _additionalOwner;
         usdc = IERC20(_usdcAddress);
     }
 
@@ -259,7 +250,7 @@ contract Motify {
         );
 
         // Only owner can call before timeout, anyone can call after timeout
-        if (msg.sender != owner && msg.sender != additionalOwner) {
+        if (msg.sender != owner) {
             require(
                 block.timestamp > ch.endTime + FINALIZATION_TIMEOUT,
                 "Only owner can finalize before timeout"

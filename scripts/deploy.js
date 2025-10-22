@@ -30,7 +30,7 @@ async function main() {
     console.log(`Deployer: ${deployer.address}`);
 
     // Inputs from env
-    const ADDITIONAL_OWNER = process.env.ADDITIONAL_OWNER || deployer.address;
+    const USDC_ADDRESS = process.env.USDC_ADDRESS; // Optional: use existing USDC address
 
     // Quiet EIP-1559 overrides (slightly bump fees)
     const feeData = await hre.ethers.provider.getFeeData();
@@ -46,11 +46,18 @@ async function main() {
 
     console.log("Deploying...");
 
-    // 1) MockUSDC
-    const { address: usdcAddress } = await deploy("MockUSDC", [], overrides(nonce++));
+    // 1) MockUSDC - deploy only if not provided
+    let usdcAddress;
+    if (USDC_ADDRESS) {
+        usdcAddress = USDC_ADDRESS;
+        console.log(`Using existing USDC: ${usdcAddress}`);
+    } else {
+        const result = await deploy("MockUSDC", [], overrides(nonce++));
+        usdcAddress = result.address;
+    }
 
-    // 2) Motify(usdc, additionalOwner)
-    const { contract: motify, address: motifyAddress } = await deploy("Motify", [usdcAddress, ADDITIONAL_OWNER], overrides(nonce++));
+    // 2) Motify(usdc)
+    const { contract: motify, address: motifyAddress } = await deploy("Motify", [usdcAddress], overrides(nonce++));
 
     // 3) MotifyToken(motify)
     const { address: tokenAddress } = await deploy("MotifyToken", [motifyAddress], overrides(nonce++));
@@ -62,8 +69,10 @@ async function main() {
 
     // Verify (quiet on failures)
     console.log("Verifying (may be skipped if already verified)...");
-    await verify(usdcAddress);
-    await verify(motifyAddress, [usdcAddress, ADDITIONAL_OWNER]);
+    if (!USDC_ADDRESS) {
+        await verify(usdcAddress);
+    }
+    await verify(motifyAddress, [usdcAddress]);
     await verify(tokenAddress, [motifyAddress]);
 
     return { usdc: usdcAddress, motify: motifyAddress, token: tokenAddress };
